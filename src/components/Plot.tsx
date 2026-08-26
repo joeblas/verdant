@@ -2,12 +2,42 @@ import { useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { useCursor } from '@react-three/drei';
 import { plotPosition } from '../game/layout';
+import { PLANT_TYPES } from '../game/plants';
+import { useAgentStore } from '../state/agentStore';
 import { useGardenStore } from '../state/gardenStore';
 import { PlantMesh } from './PlantMesh';
 import { ParticleBurst } from './ParticleBurst';
 
 const DRY_SOIL = new THREE.Color('#7a5233');
 const WET_SOIL = new THREE.Color('#4a3120');
+
+function PlanGhost({ color }: { color: string }) {
+  return (
+    <group position={[0, 0.36, 0]}>
+      <mesh position={[0, 0.3, 0]}>
+        <coneGeometry args={[0.28, 0.68, 7]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.45}
+          transparent
+          opacity={0.48}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[0.52, 0.65, 24]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.8}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
 
 export function Plot({ index }: { index: number }) {
   const [x, , z] = plotPosition(index);
@@ -25,6 +55,9 @@ export function Plot({ index }: { index: number }) {
   const selectedSeed = useGardenStore((s) => s.selectedSeed);
   const plantSeed = useGardenStore((s) => s.plantSeed);
   const selectPlot = useGardenStore((s) => s.selectPlot);
+  const previewAssignment = useAgentStore((state) =>
+    state.planPreview?.assignments.find((assignment) => assignment.plotIndex === index),
+  );
 
   const soilColor = useMemo(() => {
     const moisture = plant ? plant.water / 100 : 0.15;
@@ -33,6 +66,7 @@ export function Plot({ index }: { index: number }) {
 
   const handleClick = (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
+    if (previewAssignment) return;
     if (plant) {
       selectPlot(index);
     } else {
@@ -81,6 +115,9 @@ export function Plot({ index }: { index: number }) {
       )}
 
       {plant && <PlantMesh plant={plant} />}
+      {!plant && previewAssignment && (
+        <PlanGhost color={PLANT_TYPES[previewAssignment.plantType].color} />
+      )}
       {freshEvent && <ParticleBurst key={freshEvent.id} kind={freshEvent.kind} />}
     </group>
   );

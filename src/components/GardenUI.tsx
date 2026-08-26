@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { startGardenPlan } from '../game/agentJobs';
 import { PLANT_TYPES, PLANT_TYPE_LIST } from '../game/plants';
-import { useGardenStore } from '../state/gardenStore';
+import { useAgentStore } from '../state/agentStore';
+import { DEMO_TIME_SCALE, useGardenStore } from '../state/gardenStore';
 import { gardenTools } from '../webmcp/tools';
 import { useWebMCPStatus } from '../webmcp/register';
 import { AmbientAudio } from './AmbientAudio';
@@ -73,6 +75,7 @@ function WebMCPBadge() {
 function SeedTray() {
   const selectedSeed = useGardenStore((s) => s.selectedSeed);
   const selectSeed = useGardenStore((s) => s.selectSeed);
+  const demoMode = useGardenStore((s) => s.demoMode);
 
   return (
     <div className="seed-tray">
@@ -85,9 +88,136 @@ function SeedTray() {
         >
           <span className="seed-dot" style={{ background: type.color }} />
           <span className="seed-name">{type.name}</span>
-          <span className="seed-time">{Math.round(type.growthMs / 1000)}s</span>
+          <span className="seed-time">
+            {Math.round(type.growthMs / 1000 / (demoMode ? DEMO_TIME_SCALE : 1))}s
+          </span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function DemoControls() {
+  const demoMode = useGardenStore((state) => state.demoMode);
+  const plantCount = useGardenStore((state) => Object.keys(state.plants).length);
+  const setDemoMode = useGardenStore((state) => state.setDemoMode);
+  const loadDemoGarden = useGardenStore((state) => state.loadDemoGarden);
+  const resetGarden = useGardenStore((state) => state.resetGarden);
+  const activeJobId = useAgentStore((state) => state.activeJobId);
+  const clearPlanPreview = useAgentStore((state) => state.clearPlanPreview);
+  const robotBusy = activeJobId !== null;
+
+  return (
+    <div className="demo-controls">
+      <button
+        className={`demo-toggle ${demoMode ? 'on' : ''}`}
+        onClick={() => setDemoMode(!demoMode)}
+        title="Accelerate plant growth and care for a short judge demo"
+        disabled={robotBusy}
+      >
+        {demoMode ? `demo ${DEMO_TIME_SCALE}×` : 'demo off'}
+      </button>
+      {plantCount === 0 && (
+        <button
+          className="demo-toggle showcase"
+          disabled={robotBusy}
+          onClick={() => {
+            clearPlanPreview();
+            loadDemoGarden();
+          }}
+        >
+          load showcase
+        </button>
+      )}
+      {demoMode && (
+        <button
+          className="demo-toggle reset"
+          disabled={robotBusy}
+          onClick={() => {
+            if (window.confirm('Reset every plot and clear the harvest basket?')) {
+              clearPlanPreview();
+              resetGarden();
+            }
+          }}
+        >
+          reset
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PlanPreviewPanel() {
+  const plan = useAgentStore((state) => state.planPreview);
+  const clearPlanPreview = useAgentStore((state) => state.clearPlanPreview);
+  if (!plan) return null;
+
+  return (
+    <div className="plan-preview-panel">
+      <div className="panel-eyebrow">Agent proposal</div>
+      <div className="plan-preview-header">
+        <strong>{plan.name}</strong>
+        <span>{plan.assignments.length} plots</span>
+      </div>
+      <p>{plan.rationale}</p>
+      <div className="plan-assignment-list">
+        {plan.assignments.map((assignment) => {
+          const type = PLANT_TYPES[assignment.plantType];
+          return (
+            <span key={assignment.plotIndex} className="plan-assignment-chip">
+              <span className="seed-dot" style={{ background: type.color }} />
+              {assignment.plotIndex} · {type.name}
+            </span>
+          );
+        })}
+      </div>
+      <div className="plan-preview-actions">
+        <button className="btn" onClick={() => clearPlanPreview(plan.id)}>
+          Dismiss
+        </button>
+        <button className="btn primary" onClick={() => startGardenPlan(plan.id)}>
+          Approve & plant
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AgentJobPanel() {
+  const activeJobId = useAgentStore((state) => state.activeJobId);
+  const latestJobId = useAgentStore((state) => state.jobOrder[0] ?? null);
+  const job = useAgentStore((state) => {
+    const id = state.activeJobId ?? state.jobOrder[0];
+    return id ? state.jobs[id] ?? null : null;
+  });
+  const dismissJob = useAgentStore((state) => state.dismissJob);
+  if (!job) return null;
+
+  const progress = job.totalActions === 0
+    ? 100
+    : Math.round((job.completedActions / job.totalActions) * 100);
+  const visibleJobId = activeJobId ?? latestJobId;
+
+  return (
+    <div className={`agent-job-panel ${job.status}`}>
+      <div className="agent-job-heading">
+        <span className="agent-pulse" />
+        <strong>{job.label}</strong>
+        {job.status !== 'running' && job.status !== 'queued' && visibleJobId && (
+          <button className="close-btn" onClick={() => dismissJob(visibleJobId)} aria-label="Dismiss job">
+            ×
+          </button>
+        )}
+      </div>
+      <div className="agent-job-meta">
+        <span>{job.status}</span>
+        <span>{job.completedActions} / {job.totalActions}</span>
+      </div>
+      <div className="agent-progress-track">
+        <div className="agent-progress-fill" style={{ width: `${progress}%` }} />
+      </div>
+      {job.currentAction && <p>{job.currentAction}</p>}
+      {job.error && <p className="agent-job-error">{job.error}</p>}
     </div>
   );
 }
@@ -193,6 +323,7 @@ export function GardenUI() {
         <div className="hud-badges">
           <WebMCPBadge />
           <AmbientAudio />
+          <DemoControls />
         </div>
       </div>
       <div className="hud-top-right">
@@ -200,6 +331,8 @@ export function GardenUI() {
         <ActivityFeed />
       </div>
       <PlantCard />
+      <PlanPreviewPanel />
+      <AgentJobPanel />
       <SeedTray />
     </div>
   );

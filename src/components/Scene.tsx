@@ -64,26 +64,6 @@ function Bush({ position }: { position: [number, number, number] }) {
   );
 }
 
-function GardenBorder() {
-  const half = 1.5 * 2.2 + 1.15;
-  const rails: Array<{ pos: [number, number, number]; rot: number }> = [
-    { pos: [0, 0.12, -half], rot: 0 },
-    { pos: [0, 0.12, half], rot: 0 },
-    { pos: [-half, 0.12, 0], rot: Math.PI / 2 },
-    { pos: [half, 0.12, 0], rot: Math.PI / 2 },
-  ];
-  return (
-    <group>
-      {rails.map((r, i) => (
-        <mesh key={i} castShadow position={r.pos} rotation={[0, r.rot, 0]}>
-          <boxGeometry args={[half * 2 + 0.3, 0.24, 0.22]} />
-          <meshStandardMaterial color="#8a6a45" flatShading />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 export function Scene() {
   const plots = useMemo(() => Array.from({ length: PLOT_COUNT }, (_, i) => i), []);
 
@@ -91,7 +71,7 @@ export function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [10.5, 11, 10.5], fov: 40 }}
+      camera={{ position: [14.5, 15.5, 14.5], fov: 40 }}
       style={{ position: 'absolute', inset: 0 }}
     >
       <Daylight />
@@ -101,21 +81,20 @@ export function Scene() {
         <meshStandardMaterial color="#79b473" />
       </mesh>
 
-      <GardenBorder />
       <GardenBot />
       {plots.map((i) => (
         <Plot key={i} index={i} />
       ))}
 
-      <Tree position={[-8.5, 0, -6.5]} scale={1.25} />
-      <Tree position={[8.8, 0, -5.4]} scale={0.95} />
-      <Tree position={[7.6, 0, 7.8]} scale={1.4} />
-      <Tree position={[-7.8, 0, 7.2]} scale={0.85} />
-      <Rock position={[-5.6, 0.15, -8.2]} />
-      <Rock position={[6.2, 0.12, 8.9]} scale={0.7} />
-      <Bush position={[-9.4, 0.35, 2.4]} />
-      <Bush position={[9.6, 0.35, -1.2]} />
-      <Bush position={[2.8, 0.35, -9.6]} />
+      <Tree position={[-10.5, 0, -8.5]} scale={1.25} />
+      <Tree position={[11, 0, -7]} scale={0.95} />
+      <Tree position={[10.8, 0, 10.8]} scale={1.4} />
+      <Tree position={[-10, 0, 9.5]} scale={0.85} />
+      <Rock position={[-7.2, 0.15, -10]} />
+      <Rock position={[8, 0.12, 10.8]} scale={0.7} />
+      <Bush position={[-11.4, 0.35, 2.4]} />
+      <Bush position={[11.6, 0.35, -1.2]} />
+      <Bush position={[2.8, 0.35, -11.6]} />
 
       <OrbitControls
         makeDefault

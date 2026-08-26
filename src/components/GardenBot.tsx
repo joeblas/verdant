@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   BOT_ACTION_MS,
   botTravelMs,
   signalBotArrival,
 } from '../game/agentChoreography';
-import { plotPosition } from '../game/layout';
+import {
+  botAisleRoute,
+  botHomePosition,
+  plotApproachPosition,
+  plotPosition,
+  type GardenPosition,
+} from '../game/layout';
 import type { GardenEvent } from '../game/types';
+import { useAgentStore } from '../state/agentStore';
 import { useGardenStore } from '../state/gardenStore';
 
-const HOME = new THREE.Vector3(-5.05, 0.08, -3.7);
+const HOME = new THREE.Vector3(...botHomePosition());
 const ACTION_SECONDS = BOT_ACTION_MS / 1000;
 
 const ACTION_COLORS: Record<GardenEvent['kind'], string> = {
@@ -23,15 +31,47 @@ const ACTION_COLORS: Record<GardenEvent['kind'], string> = {
 
 interface BotJob {
   event: GardenEvent;
-  from: THREE.Vector3;
+  path: THREE.Vector3[];
   target: THREE.Vector3;
   startedAt: number;
+  distance: number;
   travelSeconds: number;
   arrivalSignaled: boolean;
+  actionRotation: number;
 }
 
 function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);
+}
+
+function vectorPosition(point: THREE.Vector3): GardenPosition {
+  return [point.x, point.y, point.z];
+}
+
+function pathDistance(path: THREE.Vector3[]): number {
+  let distance = 0;
+  for (let i = 1; i < path.length; i++) distance += path[i - 1].distanceTo(path[i]);
+  return distance;
+}
+
+function placeAlongPath(
+  path: THREE.Vector3[],
+  distance: number,
+  position: THREE.Vector3,
+): { from: THREE.Vector3; to: THREE.Vector3 } {
+  let remaining = distance;
+  for (let i = 1; i < path.length; i++) {
+    const from = path[i - 1];
+    const to = path[i];
+    const segmentLength = from.distanceTo(to);
+    if (remaining <= segmentLength || i === path.length - 1) {
+      position.lerpVectors(from, to, segmentLength === 0 ? 1 : remaining / segmentLength);
+      return { from, to };
+    }
+    remaining -= segmentLength;
+  }
+  position.copy(path[path.length - 1]);
+  return { from: path[path.length - 2], to: path[path.length - 1] };
 }
 
 function Tool({ kind }: { kind: GardenEvent['kind'] | null }) {
@@ -98,6 +138,7 @@ function Tool({ kind }: { kind: GardenEvent['kind'] | null }) {
 
 export function GardenBot() {
   const events = useGardenStore((state) => state.lastEvents);
+  const botIntent = useAgentStore((state) => state.botIntent);
   const root = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const head = useRef<THREE.Group>(null);
@@ -140,21 +181,38 @@ export function GardenBot() {
       const event = queue.current.shift()!;
       const target = event.plotIndex === null
         ? HOME.clone()
-        : (() => {
-            const [x, , z] = plotPosition(event.plotIndex);
-            const approachX = Math.sign(x) * 0.92;
-            const approachZ = Math.sign(z) * 0.92;
-            return new THREE.Vector3(x + approachX, 0.08, z + approachZ);
-          })();
+        : new THREE.Vector3(...plotApproachPosition(event.plotIndex));
       const from = current.current.clone();
+      const route = botAisleRoute(vectorPosition(from), vectorPosition(target));
+      const path = [from, ...route.map((point) => new THREE.Vector3(...point))];
+      const distance = pathDistance(path);
+      const actionRotation = event.plotIndex === null
+        ? restingRotation
+        : (() => {
+            const [plotX, , plotZ] = plotPosition(event.plotIndex);
+            return Math.atan2(plotX - target.x, plotZ - target.z);
+          })();
       active.current = {
         event,
-        from,
+        path,
         target,
         startedAt: clock.elapsedTime,
-        travelSeconds: botTravelMs(from.distanceTo(target)) / 1000,
+        distance,
+        travelSeconds: botTravelMs(distance) / 1000,
         arrivalSignaled: false,
+        actionRotation,
       };
+      const agent = useAgentStore.getState();
+      if (event.kind === 'inspect' && !agent.botIntent) {
+        agent.setBotIntent({
+          label: 'Inspecting the garden',
+          phase: 'walking',
+          kind: 'inspect',
+          plotIndex: -1,
+        });
+      } else {
+        agent.setBotIntentPhase('walking');
+      }
       setActiveKind(event.kind);
     }
 
@@ -174,17 +232,16 @@ export function GardenBot() {
     }
 
     const elapsed = clock.elapsedTime - job.startedAt;
-    const directionX = job.target.x - job.from.x;
-    const directionZ = job.target.z - job.from.z;
-    if (Math.abs(directionX) + Math.abs(directionZ) > 0.01) {
-      robot.rotation.y = Math.atan2(directionX, directionZ);
-    }
-
     if (elapsed < job.travelSeconds) {
       const t = smoothstep(elapsed / job.travelSeconds);
-      const distance = job.from.distanceTo(job.target);
-      const step = t * distance * 6.5;
-      current.current.lerpVectors(job.from, job.target, t);
+      const travelled = t * job.distance;
+      const segment = placeAlongPath(job.path, travelled, current.current);
+      const directionX = segment.to.x - segment.from.x;
+      const directionZ = segment.to.z - segment.from.z;
+      if (Math.abs(directionX) + Math.abs(directionZ) > 0.01) {
+        robot.rotation.y = Math.atan2(directionX, directionZ);
+      }
+      const step = travelled * 6.5;
       robot.position.set(
         current.current.x,
         current.current.y + Math.abs(Math.sin(step)) * 0.055,
@@ -198,10 +255,12 @@ export function GardenBot() {
     } else {
       if (!job.arrivalSignaled) {
         job.arrivalSignaled = true;
+        useAgentStore.getState().setBotIntentPhase('acting');
         if (job.event.kind !== 'inspect') signalBotArrival(job.event.id);
       }
       const actionT = Math.min((elapsed - job.travelSeconds) / ACTION_SECONDS, 1);
       robot.position.set(job.target.x, job.target.y, job.target.z);
+      robot.rotation.y = job.actionRotation;
       if (leftLeg.current) leftLeg.current.rotation.x = 0;
       if (rightLeg.current) rightLeg.current.rotation.x = 0;
       if (statusLight.current) statusLight.current.color.set(ACTION_COLORS[job.event.kind]);
@@ -233,6 +292,7 @@ export function GardenBot() {
       setActiveKind(null);
       if (body.current) body.current.rotation.set(0, 0, 0);
       if (head.current) head.current.rotation.set(0, 0, 0);
+      if (job.event.kind === 'inspect') useAgentStore.getState().setBotIntent(null);
     }
   });
 
@@ -301,6 +361,20 @@ export function GardenBot() {
           </mesh>
         </group>
         <Tool kind={activeKind} />
+        {botIntent && (
+          <Html position={[0, 2.08, 0]} center distanceFactor={9} zIndexRange={[20, 0]}>
+            <div className="bot-intent-bubble">
+              <span className={`bot-intent-phase ${botIntent.phase}`}>
+                {botIntent.phase === 'walking'
+                  ? 'walking'
+                  : botIntent.phase === 'acting'
+                    ? botIntent.kind
+                    : 'queued'}
+              </span>
+              <span>{botIntent.label}</span>
+            </div>
+          </Html>
+        )}
       </group>
     </group>
   );

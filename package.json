@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy"
   },
@@ -26,6 +27,7 @@
     "@vitejs/plugin-react": "^6.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
+    "vitest": "^4.0.0",
     "wrangler": "^4.126.0"
   }
 }

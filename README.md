@@ -19,6 +19,7 @@ Built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/).
 ```bash
 npm install
 npm run dev      # http://localhost:5173
+npm test         # simulation, aisle-routing, and agent-progress checks
 npm run build    # type-check + production build to dist/
 npm run deploy   # deploys dist/ to Cloudflare Workers Static Assets
 ```
@@ -27,7 +28,7 @@ npm run deploy   # deploys dist/ to Cloudflare Workers Static Assets
 
 1. Open the live URL in ChatGPT's in-app browser or Chrome 146+ with WebMCP
    enabled.
-2. The badge in the top-left turns green: **"Agent-ready · 9 tools"**.
+2. The badge in the top-left turns green: **"Agent-ready · 12 tools"**.
 3. Ask the agent things like:
    - "What's the state of my garden?"
    - "What needs attention right now?"
@@ -37,8 +38,11 @@ npm run deploy   # deploys dist/ to Cloudflare Workers Static Assets
 Every agent action runs through the same validated store actions as your own
 clicks, appears in the garden log tagged `agent`, and plays the same
 animations. A little garden robot springs to life for WebMCP calls, scanning
-on read-only tools and hopping to each affected plot to plant, water, harvest,
-or clear it — the agent is a fellow gardener, not a macro.
+on read-only tools and walking through the widened aisles to plant, water,
+harvest, or clear each affected plot — the agent is a fellow gardener, not a
+macro. Bulk chores return immediately as observable background jobs with live
+progress, and complete planting layouts can be previewed as glowing ghost
+plants for human approval before the robot begins.
 
 ### WebMCP tools
 
@@ -57,6 +61,9 @@ applicable:
 | `harvest_plant` | Harvest one ready plant by id. |
 | `harvest_all_ready` | Harvest everything ready. |
 | `remove_plant` | Clear a withered plant (living plants are never destroyed). |
+| `preview_garden_plan` | Render a proposed multi-plot layout without changing garden state. |
+| `run_garden_plan` | Execute the visible plan after human approval as a background job. |
+| `get_agent_job` | Read live progress and results for an asynchronous robot job. *(read-only)* |
 
 ## The game
 
@@ -67,8 +74,10 @@ applicable:
   flag. Neglect a thirsty plant and it withers; overwatering slowly hurts too.
 - **Wall-clock simulation**: the garden keeps growing while the tab is closed
   (state persists in `localStorage` and catches up on return).
-- **A gentle day/night cycle** (6 minutes), fireflies at night, swaying
+- **A bright low-poly daylight scene** with widened walkable aisles, swaying
   plants, harvest sparkles, and optional synthesized wind + birdsong.
+- **A 12× demo season** with a curated showcase garden, so planting, care,
+  withering, and harvesting can all be demonstrated in a short judging session.
 
 ## How it works
 
@@ -84,12 +93,12 @@ Agent ──WebMCP──► tool layer ┘         │                     │
   tool handlers call the *same* actions, so behavior is identical no matter
   who acts.
 - `src/game/tick.ts` — pure, wall-clock-based plant simulation.
-- `src/webmcp/tools.ts` — the 9 tool definitions (JSON Schema inputs, MCP-style
+- `src/webmcp/tools.ts` — the 12 tool definitions (JSON Schema inputs, MCP-style
   content results).
 - `src/webmcp/register.ts` — feature-detects `document.modelContext` and
   registers all tools; the game is fully playable without WebMCP.
 - `src/components/` — React Three Fiber scene: procedural low-poly plants per
-  growth stage, day/night lighting, particle effects, HUD.
+  growth stage, bright daylight, particle effects, plan ghosts, and job HUD.
 
 ## Tech
 

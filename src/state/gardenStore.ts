@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { PLANT_TYPES, isPlantTypeId, type PlantTypeId } from '../game/plants';
-import { advancePlant } from '../game/tick';
+import { advancePlant, stageForGrowth } from '../game/tick';
 import type {
   ActionResult,
   ActivityEntry,
@@ -10,12 +10,14 @@ import type {
 } from '../game/types';
 
 export const PLOT_COUNT = 16;
+export const DEMO_TIME_SCALE = 12;
 const STORAGE_KEY = 'verdant-garden-v1';
 const MAX_ACTIVITY = 40;
 
 interface PersistedState {
   plants: Record<string, Plant>;
   basket: Partial<Record<PlantTypeId, number>>;
+  demoMode: boolean;
 }
 
 interface GardenState extends PersistedState {
@@ -34,6 +36,9 @@ interface GardenState extends PersistedState {
   removePlant: (plantId: string, actor: Actor) => ActionResult;
   signalAgentAction: (kind: GardenEvent['kind'], plotIndex: number | null) => number;
   signalAgentInspection: () => void;
+  setDemoMode: (enabled: boolean) => void;
+  loadDemoGarden: () => ActionResult;
+  resetGarden: () => void;
   tickAll: () => void;
 }
 
@@ -54,11 +59,15 @@ function emptyPlots(plants: Record<string, Plant>): number[] {
   return free;
 }
 
-function tickPlants(plants: Record<string, Plant>, now: number): Record<string, Plant> {
+function tickPlants(
+  plants: Record<string, Plant>,
+  now: number,
+  timeScale: number,
+): Record<string, Plant> {
   let changed = false;
   const next: Record<string, Plant> = {};
   for (const [id, plant] of Object.entries(plants)) {
-    const advanced = advancePlant(plant, now);
+    const advanced = advancePlant(plant, now, timeScale);
     if (advanced !== plant) changed = true;
     next[id] = advanced;
   }
@@ -68,15 +77,15 @@ function tickPlants(plants: Record<string, Plant>, now: number): Record<string, 
 function loadPersisted(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { plants: {}, basket: {} };
+    if (!raw) return { plants: {}, basket: {}, demoMode: false };
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     const plants: Record<string, Plant> = {};
     for (const [id, plant] of Object.entries(parsed.plants ?? {})) {
       if (plant && isPlantTypeId(plant.type)) plants[id] = plant;
     }
-    return { plants, basket: parsed.basket ?? {} };
+    return { plants, basket: parsed.basket ?? {}, demoMode: parsed.demoMode === true };
   } catch {
-    return { plants: {}, basket: {} };
+    return { plants: {}, basket: {}, demoMode: false };
   }
 }
 
@@ -271,9 +280,76 @@ export const useGardenStore = create<GardenState>()((set, get) => {
     signalAgentAction: (kind, plotIndex) => emitEvent(kind, plotIndex, 'agent', 'intent'),
     signalAgentInspection: () => emitEvent('inspect', null, 'agent', 'intent'),
 
+    setDemoMode: (demoMode) => {
+      get().tickAll();
+      set({ demoMode });
+      log('you', demoMode ? `Started a ${DEMO_TIME_SCALE}× demo season.` : 'Returned to normal garden time.');
+    },
+
+    loadDemoGarden: () => {
+      if (Object.keys(get().plants).length > 0) {
+        return fail('The showcase garden can only be loaded when every plot is empty.');
+      }
+      const now = Date.now();
+      const makeDemoPlant = (
+        type: PlantTypeId,
+        plotIndex: number,
+        growth: number,
+        water: number,
+        health = 100,
+      ): Plant => {
+        const withered = health <= 0;
+        const stage = withered ? 'withered' : stageForGrowth(growth);
+        return {
+          id: makePlantId(),
+          type,
+          plotIndex,
+          growth,
+          health,
+          water,
+          stage,
+          readyToHarvest: stage === 'mature',
+          plantedAt: now,
+          lastTickAt: now,
+        };
+      };
+      const showcase = [
+        makeDemoPlant('lettuce', 0, 1, 72),
+        makeDemoPlant('carrot', 1, 0.82, 28),
+        makeDemoPlant('tomato', 2, 0.46, 62),
+        makeDemoPlant('lavender', 3, 0.72, 0, 0),
+        makeDemoPlant('sunflower', 4, 0.9, 31),
+        makeDemoPlant('pumpkin', 5, 0.22, 66),
+        makeDemoPlant('tomato', 10, 1, 70),
+        makeDemoPlant('lavender', 15, 0.12, 58),
+      ];
+      set({
+        plants: Object.fromEntries(showcase.map((plant) => [plant.id, plant])),
+        demoMode: true,
+        selectedPlot: null,
+      });
+      const message = `Loaded the showcase garden in ${DEMO_TIME_SCALE}× demo time.`;
+      log('you', message);
+      return { ok: true, message };
+    },
+
+    resetGarden: () => {
+      set({
+        plants: {},
+        basket: {},
+        selectedPlot: null,
+        activity: [],
+        lastEvents: [],
+      });
+    },
+
     tickAll: () => {
       const now = Date.now();
-      const plants = tickPlants(get().plants, now);
+      const plants = tickPlants(
+        get().plants,
+        now,
+        get().demoMode ? DEMO_TIME_SCALE : 1,
+      );
       if (plants !== get().plants) set({ plants });
     },
   };
@@ -282,12 +358,16 @@ export const useGardenStore = create<GardenState>()((set, get) => {
 // Persist plants + basket (debounced) so the garden survives reloads.
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 useGardenStore.subscribe((state, prev) => {
-  if (state.plants === prev.plants && state.basket === prev.basket) return;
+  if (
+    state.plants === prev.plants &&
+    state.basket === prev.basket &&
+    state.demoMode === prev.demoMode
+  ) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const { plants, basket } = useGardenStore.getState();
+    const { plants, basket, demoMode } = useGardenStore.getState();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ plants, basket }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ plants, basket, demoMode }));
     } catch {
       // storage full or unavailable — the garden simply won't persist
     }

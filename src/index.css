@@ -484,3 +484,258 @@ body {
   font-size: 10px;
   color: var(--text-dim);
 }
+
+/* --- demo controls --- */
+
+.demo-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.demo-toggle {
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.demo-toggle:hover,
+.demo-toggle.on {
+  color: var(--gold);
+  border-color: rgba(255, 214, 110, 0.55);
+}
+
+.demo-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.demo-toggle.showcase {
+  color: var(--blue);
+}
+
+.demo-toggle.reset {
+  color: #ffb3a8;
+}
+
+/* --- shared plan preview --- */
+
+.plan-preview-panel {
+  position: absolute;
+  bottom: 110px;
+  left: 20px;
+  width: min(360px, calc(100vw - 40px));
+  padding: 15px;
+  background: rgba(16, 28, 24, 0.82);
+  border: 1px solid rgba(159, 232, 112, 0.42);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(16px);
+}
+
+.panel-eyebrow {
+  margin-bottom: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.plan-preview-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.plan-preview-header strong {
+  font-size: 17px;
+}
+
+.plan-preview-header span,
+.plan-preview-panel p {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.plan-preview-panel p {
+  margin: 7px 0 10px;
+  line-height: 1.45;
+}
+
+.plan-assignment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.plan-assignment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  font-size: 10.5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.plan-assignment-chip .seed-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.plan-preview-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* --- agent job progress + visible intent --- */
+
+.agent-job-panel {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  width: min(390px, calc(100vw - 40px));
+  padding: 12px 14px;
+  transform: translateX(-50%);
+  background: rgba(16, 27, 31, 0.78);
+  border: 1px solid rgba(108, 184, 255, 0.4);
+  border-radius: 15px;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(16px);
+}
+
+.agent-job-panel.completed {
+  border-color: rgba(159, 232, 112, 0.48);
+}
+
+.agent-job-panel.failed {
+  border-color: rgba(224, 80, 60, 0.58);
+}
+
+.agent-job-heading,
+.agent-job-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-job-heading strong {
+  flex: 1;
+  font-size: 12.5px;
+}
+
+.agent-job-heading .close-btn {
+  margin-left: 0;
+}
+
+.agent-job-meta {
+  justify-content: space-between;
+  margin: 5px 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.agent-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 10px var(--blue);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-job-panel.completed .agent-pulse {
+  background: var(--green);
+  box-shadow: none;
+  animation: none;
+}
+
+.agent-progress-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.agent-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+  transition: width 0.35s ease;
+}
+
+.agent-job-panel p {
+  margin: 7px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.agent-job-error {
+  color: #ffb3a8 !important;
+}
+
+.bot-intent-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: 210px;
+  padding: 8px 10px;
+  font-family: ui-rounded, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  background: rgba(17, 29, 31, 0.9);
+  border: 1px solid rgba(108, 184, 255, 0.5);
+  border-radius: 11px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.bot-intent-phase {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+
+.bot-intent-phase.acting {
+  color: var(--gold);
+}
+
+@keyframes agent-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
+@media (max-width: 900px) {
+  .hud-badges {
+    flex-wrap: wrap;
+    max-width: 360px;
+  }
+
+  .agent-job-panel {
+    top: auto;
+    bottom: 106px;
+  }
+
+  .plan-preview-panel {
+    bottom: 174px;
+  }
+}

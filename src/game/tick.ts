@@ -22,13 +22,13 @@ export function stageForGrowth(growth: number): GrowthStage {
  * Advances a plant using wall-clock elapsed time, so the garden keeps
  * growing while the tab is closed. Pure: returns a new plant object.
  */
-export function advancePlant(plant: Plant, now: number): Plant {
+export function advancePlant(plant: Plant, now: number, timeScale = 1): Plant {
   if (plant.stage === 'withered') {
     return plant.lastTickAt === now ? plant : { ...plant, lastTickAt: now };
   }
 
   const type = PLANT_TYPES[plant.type];
-  const elapsedMs = Math.max(0, now - plant.lastTickAt);
+  const elapsedMs = Math.max(0, now - plant.lastTickAt) * timeScale;
   const elapsedMin = elapsedMs / 60_000;
 
   let { water, health, growth } = plant;

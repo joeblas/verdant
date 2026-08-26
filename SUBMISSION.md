@@ -13,11 +13,13 @@ the same page.
 verdant is a calm, low-poly 3D garden. You plant seeds, keep them watered, and
 harvest them when they're ready. Because the garden is agent-ready via WebMCP,
 an AI agent in ChatGPT's in-app browser (or Chrome with WebMCP) can discover
-the garden's nine tools and garden alongside you — watering what's thirsty,
+the garden's twelve tools and garden alongside you — watering what's thirsty,
 harvesting what's ready, and planting whatever you ask for — while you watch
 the scene, the plants, and the garden log respond in real time. A garden robot
-scans on read-only calls, then hops between plots with the right tool in hand
-whenever the agent plants, waters, harvests, or clears something.
+scans on read-only calls, then walks through the widened garden aisles with the
+right tool in hand whenever the agent plants, waters, harvests, or clears
+something. Multi-step chores run as observable background jobs, so the page
+shows the agent's intent and progress without holding a tool call open.
 
 ## Why this is a strong fit for WebMCP
 
@@ -57,20 +59,28 @@ same hands, not a cheat code.
 
 - Imperative API on `document.modelContext` (July 2026 CG draft), with feature
   detection, one `AbortController` for the whole tool set, and
-  `annotations.readOnlyHint` on the three query tools.
-- Nine tools: `get_garden_state`, `list_plant_types`,
+  `annotations.readOnlyHint` on all four query/status tools.
+- Twelve tools: `get_garden_state`, `list_plant_types`,
   `get_care_recommendations` (all read-only), plus `plant_seed`,
   `water_plant`, `water_all_thirsty`, `harvest_plant`, `harvest_all_ready`,
-  `remove_plant`.
+  `remove_plant`, `preview_garden_plan`, `run_garden_plan`, and
+  `get_agent_job`.
 - Every tool has a tight JSON Schema (`additionalProperties: false`, enums for
   plant types, plot index bounds) and returns MCP-style text content with
   structured JSON for the agent to reason over.
 - Tool handlers call the same Zustand store actions as the React UI, so
   validation, error messages, animations, and the activity log are identical
   for both actors. Agent actions are tagged `agent` in the garden log and feed
-  a queued event stream that drives the garden robot's plot-by-plot actions.
+  a queued event stream that drives the garden robot's aisle-safe,
+  plot-by-plot actions. Bulk chores return a job id immediately and expose
+  live progress through both the HUD and `get_agent_job`.
+- Agents can stage a complete planting layout as glowing ghost plants. The
+  person can review, dismiss, or approve the visible plan before any garden
+  state changes.
 - The simulation is wall-clock based and persisted to `localStorage`, so the
-  garden keeps growing between visits — for you and for the agent.
+  garden keeps growing between visits — for you and for the agent. A clearly
+  labeled 12× demo season and curated showcase state make the full care loop
+  judgeable in under three minutes.
 
 ## Links
 
@@ -84,8 +94,9 @@ same hands, not a cheat code.
 - [x] Public repo with source, README, and MIT license
 - [x] Text description (above)
 - [ ] Demo video (<3 min, public YouTube, audio narration):
-  suggested arc — (1) 10s: tend the garden by hand; (2) 20s: open in ChatGPT,
-  badge turns green, "agent-ready · 9 tools"; (3) 60s: agent reads state,
-  waters the thirsty, harvests the ready, plants a requested layout;
-  (4) 20s: the garden log showing `you` and `agent` side by side.
+  suggested arc — (1) 10s: load the accelerated showcase; (2) 20s: open in
+  ChatGPT, badge turns green, "agent-ready · 12 tools"; (3) 45s: ask for a
+  pollinator layout and review its glowing preview; (4) 60s: approve it and
+  watch the robot's intent, aisle route, and live job progress; (5) 20s: show
+  the garden log and completed job report.
 - [ ] Submit on Devpost before **Sept 3, 2026, 1:00 pm PDT**

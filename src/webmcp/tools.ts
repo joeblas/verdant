@@ -1,7 +1,14 @@
 import { PLANT_TYPE_LIST, PLANT_TYPES, isPlantTypeId } from '../game/plants';
-import { BOT_ACTION_MS, waitForBot, waitForBotArrival } from '../game/agentChoreography';
+import {
+  agentJobSnapshot,
+  createGardenPlanPreview,
+  enqueueAgentJob,
+  performAgentAction,
+  startGardenPlan,
+} from '../game/agentJobs';
 import type { Plant } from '../game/types';
-import { PLOT_COUNT, useGardenStore } from '../state/gardenStore';
+import type { GardenPlanAssignment } from '../state/agentStore';
+import { DEMO_TIME_SCALE, PLOT_COUNT, useGardenStore } from '../state/gardenStore';
 
 interface TextContent {
   type: 'text';
@@ -55,19 +62,9 @@ function gardenSnapshot() {
     emptyPlots: plots.filter((p) => p.plant === null).map((p) => p.plotIndex),
     basket: after.basket,
     plantCount: plants.length,
+    demoMode: after.demoMode,
+    timeScale: after.demoMode ? DEMO_TIME_SCALE : 1,
   };
-}
-
-async function performAgentAction<T>(
-  kind: 'plant' | 'water' | 'harvest' | 'remove',
-  plotIndex: number,
-  action: () => T,
-): Promise<T> {
-  const eventId = useGardenStore.getState().signalAgentAction(kind, plotIndex);
-  await waitForBotArrival(eventId);
-  const outcome = action();
-  await waitForBot(BOT_ACTION_MS);
-  return outcome;
 }
 
 function currentPlant(plantId: string): Plant | undefined {
@@ -92,6 +89,18 @@ const plantIdSchema = {
 const emptySchema = {
   type: 'object',
   properties: {},
+  additionalProperties: false,
+} as const;
+
+const jobIdSchema = {
+  type: 'object',
+  properties: {
+    jobId: {
+      type: 'string',
+      minLength: 1,
+      description: 'Job id returned by a bulk action or run_garden_plan. Omit for the latest job.',
+    },
+  },
   additionalProperties: false,
 } as const;
 
@@ -179,6 +188,135 @@ export const gardenTools: GardenTool[] = [
     },
   },
   {
+    name: 'preview_garden_plan',
+    description:
+      'Stage a proposed planting layout as glowing ghost plants in the live garden without planting anything. Use this for collaborative design: explain the plan, let the person review it, and only call run_garden_plan after they approve. Calling this again replaces the previous preview.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 60,
+          description: 'A short human-friendly name for the layout.',
+        },
+        rationale: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 280,
+          description: 'A concise explanation of the design choices.',
+        },
+        assignments: {
+          type: 'array',
+          minItems: 1,
+          maxItems: PLOT_COUNT,
+          description: 'The empty plots and plant types to show in the preview.',
+          items: {
+            type: 'object',
+            properties: {
+              plotIndex: { type: 'integer', minimum: 0, maximum: PLOT_COUNT - 1 },
+              plantType: { type: 'string', enum: PLANT_TYPE_LIST.map((type) => type.id) },
+            },
+            required: ['plotIndex', 'plantType'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['name', 'rationale', 'assignments'],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const name = typeof input.name === 'string' ? input.name.trim().slice(0, 60) : '';
+      const rationale =
+        typeof input.rationale === 'string' ? input.rationale.trim().slice(0, 280) : '';
+      if (!name || !rationale || !Array.isArray(input.assignments)) {
+        return result('A plan needs a name, rationale, and at least one plot assignment.');
+      }
+      if (input.assignments.length > PLOT_COUNT) {
+        return result(`A plan can target at most ${PLOT_COUNT} plots.`);
+      }
+
+      const garden = useGardenStore.getState();
+      garden.tickAll();
+      const occupied = new Set(
+        Object.values(useGardenStore.getState().plants).map((plant) => plant.plotIndex),
+      );
+      const seen = new Set<number>();
+      const assignments: GardenPlanAssignment[] = [];
+      for (const raw of input.assignments) {
+        if (!raw || typeof raw !== 'object') return result('Every assignment must be an object.');
+        const item = raw as Record<string, unknown>;
+        if (
+          typeof item.plotIndex !== 'number' ||
+          !Number.isInteger(item.plotIndex) ||
+          item.plotIndex < 0 ||
+          item.plotIndex >= PLOT_COUNT ||
+          !isPlantTypeId(item.plantType)
+        ) {
+          return result('Every assignment needs a valid plotIndex and plantType.');
+        }
+        if (seen.has(item.plotIndex)) return result(`Plot ${item.plotIndex} appears more than once.`);
+        if (occupied.has(item.plotIndex)) return result(`Plot ${item.plotIndex} is already occupied.`);
+        seen.add(item.plotIndex);
+        assignments.push({ plotIndex: item.plotIndex, plantType: item.plantType });
+      }
+      if (assignments.length === 0) return result('The plan has no assignments to preview.');
+
+      const preview = createGardenPlanPreview(name, rationale, assignments);
+      return result(
+        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}. Nothing has been planted yet.`,
+        {
+          plan: preview,
+          nextStep: 'Ask the person to review the glowing plan, then call run_garden_plan with this planId after approval.',
+        },
+      );
+    },
+  },
+  {
+    name: 'run_garden_plan',
+    description:
+      'Execute the currently visible planting preview after the person approves it. Returns immediately with a job id while the robot plants each assignment asynchronously. Poll get_agent_job for progress.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: {
+          type: 'string',
+          minLength: 1,
+          description: 'The exact plan id returned by preview_garden_plan.',
+        },
+      },
+      required: ['planId'],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const planId = String(input.planId ?? '');
+      const job = startGardenPlan(planId);
+      if (!job) {
+        return result('That preview is missing, stale, or no longer targets empty plots. Create a fresh preview first.');
+      }
+      return result(
+        `Started “${job.label}” as ${job.id}. The robot is working in the background.`,
+        agentJobSnapshot(job.id),
+      );
+    },
+  },
+  {
+    name: 'get_agent_job',
+    description:
+      'Get live progress for an asynchronous robot job started by a bulk action or approved garden plan. Omit jobId to inspect the active or most recent job.',
+    inputSchema: jobIdSchema,
+    annotations: { readOnlyHint: true },
+    async execute(input) {
+      const jobId = typeof input.jobId === 'string' ? input.jobId : undefined;
+      const job = agentJobSnapshot(jobId);
+      if (!job) return result(jobId ? `No agent job named "${jobId}".` : 'No agent jobs yet.');
+      return result(
+        `${job.label}: ${job.completedActions}/${job.totalActions} actions, ${job.status}.`,
+        job,
+      );
+    },
+  },
+  {
     name: 'plant_seed',
     description:
       'Plant a seed in a garden plot. If plotIndex is omitted, the first empty plot is used. New plants start healthy with moderate water.',
@@ -222,9 +360,12 @@ export const gardenTools: GardenTool[] = [
         const res = useGardenStore.getState().plantSeed(plantType, plotIndex, 'agent');
         return result(res.message);
       }
-      const res = await performAgentAction('plant', target, () =>
-        useGardenStore.getState().plantSeed(plantType, target, 'agent'),
-      );
+      const res = await performAgentAction({
+        kind: 'plant',
+        plotIndex: target,
+        plantType,
+        label: `Planting ${PLANT_TYPES[plantType].name} in plot ${target}`,
+      });
       return res.ok ? result(res.message, gardenSnapshot()) : result(res.message);
     },
   },
@@ -240,9 +381,12 @@ export const gardenTools: GardenTool[] = [
         const res = useGardenStore.getState().waterPlant(plantId, 'agent');
         return result(res.message);
       }
-      const res = await performAgentAction('water', plant.plotIndex, () =>
-        useGardenStore.getState().waterPlant(plantId, 'agent'),
-      );
+      const res = await performAgentAction({
+        kind: 'water',
+        plotIndex: plant.plotIndex,
+        plantId,
+        label: `Watering ${PLANT_TYPES[plant.type].name} in plot ${plant.plotIndex}`,
+      });
       return result(res.message);
     },
   },
@@ -259,16 +403,18 @@ export const gardenTools: GardenTool[] = [
       if (thirsty.length === 0) {
         return result(state.waterAllThirsty('agent').message);
       }
-      const watered: Plant[] = [];
-      for (const plant of thirsty) {
-        const res = await performAgentAction('water', plant.plotIndex, () =>
-          useGardenStore.getState().waterPlant(plant.id, 'agent'),
-        );
-        if (res.ok) watered.push(plant);
-      }
-      const names = watered.map((plant) => `${PLANT_TYPES[plant.type].name} (${plant.id})`).join(', ');
+      const job = enqueueAgentJob(
+        `Watering ${thirsty.length} thirsty plant${thirsty.length === 1 ? '' : 's'}`,
+        thirsty.map((plant) => ({
+          kind: 'water',
+          plotIndex: plant.plotIndex,
+          plantId: plant.id,
+          label: `Watering ${PLANT_TYPES[plant.type].name} in plot ${plant.plotIndex}`,
+        })),
+      );
       return result(
-        `Watered ${watered.length} thirsty plant${watered.length === 1 ? '' : 's'}: ${names}.`,
+        `Started ${job.id}. The robot will water ${thirsty.length} thirsty plant${thirsty.length === 1 ? '' : 's'} in the background.`,
+        agentJobSnapshot(job.id),
       );
     },
   },
@@ -284,9 +430,12 @@ export const gardenTools: GardenTool[] = [
         const res = useGardenStore.getState().harvestPlant(plantId, 'agent');
         return result(res.message);
       }
-      const res = await performAgentAction('harvest', plant.plotIndex, () =>
-        useGardenStore.getState().harvestPlant(plantId, 'agent'),
-      );
+      const res = await performAgentAction({
+        kind: 'harvest',
+        plotIndex: plant.plotIndex,
+        plantId,
+        label: `Harvesting ${PLANT_TYPES[plant.type].name} from plot ${plant.plotIndex}`,
+      });
       return res.ok ? result(res.message, gardenSnapshot()) : result(res.message);
     },
   },
@@ -303,17 +452,18 @@ export const gardenTools: GardenTool[] = [
       if (ready.length === 0) {
         return result(state.harvestAllReady('agent').message);
       }
-      const harvested: Plant[] = [];
-      for (const plant of ready) {
-        const res = await performAgentAction('harvest', plant.plotIndex, () =>
-          useGardenStore.getState().harvestPlant(plant.id, 'agent'),
-        );
-        if (res.ok) harvested.push(plant);
-      }
-      const names = harvested.map((plant) => `${PLANT_TYPES[plant.type].name} (${plant.id})`).join(', ');
+      const job = enqueueAgentJob(
+        `Harvesting ${ready.length} mature plant${ready.length === 1 ? '' : 's'}`,
+        ready.map((plant) => ({
+          kind: 'harvest',
+          plotIndex: plant.plotIndex,
+          plantId: plant.id,
+          label: `Harvesting ${PLANT_TYPES[plant.type].name} from plot ${plant.plotIndex}`,
+        })),
+      );
       return result(
-        `Harvested ${harvested.length} plant${harvested.length === 1 ? '' : 's'}: ${names}.`,
-        gardenSnapshot(),
+        `Started ${job.id}. The robot will harvest ${ready.length} mature plant${ready.length === 1 ? '' : 's'} in the background.`,
+        agentJobSnapshot(job.id),
       );
     },
   },
@@ -329,9 +479,12 @@ export const gardenTools: GardenTool[] = [
         const res = useGardenStore.getState().removePlant(plantId, 'agent');
         return result(res.message);
       }
-      const res = await performAgentAction('remove', plant.plotIndex, () =>
-        useGardenStore.getState().removePlant(plantId, 'agent'),
-      );
+      const res = await performAgentAction({
+        kind: 'remove',
+        plotIndex: plant.plotIndex,
+        plantId,
+        label: `Clearing ${PLANT_TYPES[plant.type].name} from plot ${plant.plotIndex}`,
+      });
       return result(res.message);
     },
   },
