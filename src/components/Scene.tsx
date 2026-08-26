@@ -88,7 +88,10 @@ const FIREFLY_COUNT = 22;
 
 function Fireflies() {
   const group = useRef<THREE.Group>(null);
-  const material = useRef<THREE.MeshBasicMaterial>(null);
+  const material = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#ffe9a3', transparent: true, opacity: 0 }),
+    [],
+  );
   const seeds = useMemo(
     () =>
       Array.from({ length: FIREFLY_COUNT }, (_, i) => ({
@@ -104,7 +107,7 @@ function Fireflies() {
     const t = (((clock.elapsedTime * 1000) / CYCLE_MS + START_AT) % 1 + 1) % 1;
     const elevation = Math.sin((t - 0.25) * Math.PI * 2);
     const night = THREE.MathUtils.clamp(-elevation * 2.5, 0, 1);
-    if (material.current) material.current.opacity = night * 0.9;
+    material.opacity = night * 0.9;
     if (group.current) {
       group.current.visible = night > 0.02;
       group.current.children.forEach((child, i) => {
@@ -121,9 +124,8 @@ function Fireflies() {
   return (
     <group ref={group}>
       {seeds.map((s, i) => (
-        <mesh key={i} position={[s.x, s.y, s.z]}>
+        <mesh key={i} position={[s.x, s.y, s.z]} material={material}>
           <sphereGeometry args={[0.045, 6, 6]} />
-          <meshBasicMaterial ref={i === 0 ? material : undefined} color="#ffe9a3" transparent />
         </mesh>
       ))}
     </group>
