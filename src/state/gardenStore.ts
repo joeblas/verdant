@@ -32,6 +32,8 @@ interface GardenState extends PersistedState {
   harvestPlant: (plantId: string, actor: Actor) => ActionResult;
   harvestAllReady: (actor: Actor) => ActionResult;
   removePlant: (plantId: string, actor: Actor) => ActionResult;
+  signalAgentAction: (kind: GardenEvent['kind'], plotIndex: number | null) => void;
+  signalAgentInspection: () => void;
   tickAll: () => void;
 }
 
@@ -95,11 +97,16 @@ export const useGardenStore = create<GardenState>()((set, get) => {
     }));
   };
 
-  const emitEvent = (kind: GardenEvent['kind'], plotIndex: number) => {
+  const emitEvent = (
+    kind: GardenEvent['kind'],
+    plotIndex: number | null,
+    actor: Actor,
+    phase: GardenEvent['phase'] = 'effect',
+  ) => {
     set((state) => ({
       lastEvents: [
         ...state.lastEvents.slice(-19),
-        { id: ++eventCounter, kind, plotIndex, at: Date.now() },
+        { id: ++eventCounter, kind, plotIndex, actor, phase, at: Date.now() },
       ],
     }));
   };
@@ -147,7 +154,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
         lastTickAt: now,
       };
       set({ plants: { ...plants, [plant.id]: plant } });
-      emitEvent('plant', target);
+      emitEvent('plant', target, actor);
       const message = `Planted ${plantType.name} in plot ${target} (id: ${plant.id}).`;
       log(actor, message);
       return { ok: true, message };
@@ -165,7 +172,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
       set({
         plants: { ...get().plants, [plantId]: { ...plant, water } },
       });
-      emitEvent('water', plant.plotIndex);
+      emitEvent('water', plant.plotIndex, actor);
       const message = `Watered ${type.name} (${plantId}) — water ${Math.round(plant.water)} → ${Math.round(water)}.`;
       log(actor, message);
       return { ok: true, message };
@@ -183,7 +190,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
       for (const plant of thirsty) {
         const type = PLANT_TYPES[plant.type];
         plants[plant.id] = { ...plant, water: Math.min(100, plant.water + type.waterPerWatering) };
-        emitEvent('water', plant.plotIndex);
+        emitEvent('water', plant.plotIndex, actor);
       }
       set({ plants });
       const names = thirsty.map((p) => `${PLANT_TYPES[p.type].name} (${p.id})`).join(', ');
@@ -208,7 +215,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
       delete plants[plantId];
       const basket = { ...get().basket, [plant.type]: (get().basket[plant.type] ?? 0) + type.harvestYield };
       set({ plants, basket });
-      emitEvent('harvest', plant.plotIndex);
+      emitEvent('harvest', plant.plotIndex, actor);
       const message = `Harvested ${type.harvestYield}× ${type.name} from plot ${plant.plotIndex}.`;
       log(actor, message);
       return { ok: true, message };
@@ -228,7 +235,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
         delete plants[plant.id];
         basket[plant.type] = (basket[plant.type] ?? 0) + type.harvestYield;
         names.push(`${type.name} (${plant.id})`);
-        emitEvent('harvest', plant.plotIndex);
+        emitEvent('harvest', plant.plotIndex, actor);
       }
       set({ plants, basket });
       const message = `Harvested ${ready.length} plant${ready.length === 1 ? '' : 's'}: ${names.join(', ')}.`;
@@ -246,10 +253,14 @@ export const useGardenStore = create<GardenState>()((set, get) => {
       const plants = { ...get().plants };
       delete plants[plantId];
       set({ plants });
+      emitEvent('remove', plant.plotIndex, actor);
       const message = `Cleared the withered ${type.name} from plot ${plant.plotIndex}.`;
       log(actor, message);
       return { ok: true, message };
     },
+
+    signalAgentAction: (kind, plotIndex) => emitEvent(kind, plotIndex, 'agent', 'intent'),
+    signalAgentInspection: () => emitEvent('inspect', null, 'agent', 'intent'),
 
     tickAll: () => {
       const now = Date.now();

@@ -36,7 +36,9 @@ npm run deploy   # deploys dist/ to Cloudflare Workers Static Assets
 
 Every agent action runs through the same validated store actions as your own
 clicks, appears in the garden log tagged `agent`, and plays the same
-animations — the agent is a fellow gardener, not a macro.
+animations. A little garden robot springs to life for WebMCP calls, scanning
+on read-only tools and hopping to each affected plot to plant, water, harvest,
+or clear it — the agent is a fellow gardener, not a macro.
 
 ### WebMCP tools
 

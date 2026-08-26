@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { useCursor } from '@react-three/drei';
+import { plotPosition } from '../game/layout';
 import { useGardenStore } from '../state/gardenStore';
 import { PlantMesh } from './PlantMesh';
 import { ParticleBurst } from './ParticleBurst';
-import { plotPosition } from './Scene';
 
 const DRY_SOIL = new THREE.Color('#7a5233');
 const WET_SOIL = new THREE.Color('#4a3120');
@@ -41,7 +41,9 @@ export function Plot({ index }: { index: number }) {
   };
 
   const freshEvent =
-    lastEvents.find((e) => e.plotIndex === index && Date.now() - e.at < 1200) ?? null;
+    lastEvents.find(
+      (e) => e.phase === 'effect' && e.plotIndex === index && Date.now() - e.at < 1200,
+    ) ?? null;
 
   return (
     <group position={[x, 0, z]}>

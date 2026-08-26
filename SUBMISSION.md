@@ -15,7 +15,9 @@ harvest them when they're ready. Because the garden is agent-ready via WebMCP,
 an AI agent in ChatGPT's in-app browser (or Chrome with WebMCP) can discover
 the garden's nine tools and garden alongside you — watering what's thirsty,
 harvesting what's ready, and planting whatever you ask for — while you watch
-the scene, the plants, and the garden log respond in real time.
+the scene, the plants, and the garden log respond in real time. A garden robot
+scans on read-only calls, then hops between plots with the right tool in hand
+whenever the agent plants, waters, harvests, or clears something.
 
 ## Why this is a strong fit for WebMCP
 
@@ -65,7 +67,8 @@ same hands, not a cheat code.
   structured JSON for the agent to reason over.
 - Tool handlers call the same Zustand store actions as the React UI, so
   validation, error messages, animations, and the activity log are identical
-  for both actors. Agent actions are tagged `agent` in the garden log.
+  for both actors. Agent actions are tagged `agent` in the garden log and feed
+  a queued event stream that drives the garden robot's plot-by-plot actions.
 - The simulation is wall-clock based and persisted to `localStorage`, so the
   garden keeps growing between visits — for you and for the agent.
 

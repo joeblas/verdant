@@ -1,4 +1,5 @@
 import { PLANT_TYPE_LIST, PLANT_TYPES, isPlantTypeId } from '../game/plants';
+import { BOT_ACTION_MS, BOT_TRAVEL_MS, waitForBot } from '../game/agentChoreography';
 import type { Plant } from '../game/types';
 import { PLOT_COUNT, useGardenStore } from '../state/gardenStore';
 
@@ -57,6 +58,24 @@ function gardenSnapshot() {
   };
 }
 
+async function performAgentAction<T>(
+  kind: 'plant' | 'water' | 'harvest' | 'remove',
+  plotIndex: number,
+  action: () => T,
+): Promise<T> {
+  useGardenStore.getState().signalAgentAction(kind, plotIndex);
+  await waitForBot(BOT_TRAVEL_MS);
+  const outcome = action();
+  await waitForBot(BOT_ACTION_MS);
+  return outcome;
+}
+
+function currentPlant(plantId: string): Plant | undefined {
+  const state = useGardenStore.getState();
+  state.tickAll();
+  return useGardenStore.getState().plants[plantId];
+}
+
 const plantIdSchema = {
   type: 'object',
   properties: {
@@ -84,6 +103,7 @@ export const gardenTools: GardenTool[] = [
     inputSchema: emptySchema,
     annotations: { readOnlyHint: true },
     async execute() {
+      useGardenStore.getState().signalAgentInspection();
       const snapshot = gardenSnapshot();
       return result(
         `Garden state: ${snapshot.plantCount} plant(s) across ${PLOT_COUNT} plots, ${snapshot.emptyPlots.length} empty.`,
@@ -98,6 +118,7 @@ export const gardenTools: GardenTool[] = [
     inputSchema: emptySchema,
     annotations: { readOnlyHint: true },
     async execute() {
+      useGardenStore.getState().signalAgentInspection();
       const catalog = PLANT_TYPE_LIST.map((t) => ({
         id: t.id,
         name: t.name,
@@ -117,6 +138,7 @@ export const gardenTools: GardenTool[] = [
     inputSchema: emptySchema,
     annotations: { readOnlyHint: true },
     async execute() {
+      useGardenStore.getState().signalAgentInspection();
       const snapshot = gardenSnapshot();
       const plants = snapshot.plots.flatMap((p) => (p.plant ? [p.plant] : []));
       const thirsty = plants.filter((p) => p.stage !== 'withered' && p.water < 35);
@@ -184,11 +206,25 @@ export const gardenTools: GardenTool[] = [
           `Unknown plantType "${String(input.plantType)}". Valid options: ${PLANT_TYPE_LIST.map((t) => t.id).join(', ')}.`,
         );
       }
+      const plantType = input.plantType;
       const plotIndex =
         typeof input.plotIndex === 'number' ? Math.trunc(input.plotIndex) : null;
-      const res = useGardenStore
-        .getState()
-        .plantSeed(input.plantType, plotIndex, 'agent');
+      const state = useGardenStore.getState();
+      state.tickAll();
+      const occupied = new Set(
+        Object.values(useGardenStore.getState().plants).map((plant) => plant.plotIndex),
+      );
+      const target =
+        plotIndex ??
+        Array.from({ length: PLOT_COUNT }, (_, i) => i).find((i) => !occupied.has(i)) ??
+        null;
+      if (target === null || target < 0 || target >= PLOT_COUNT || occupied.has(target)) {
+        const res = useGardenStore.getState().plantSeed(plantType, plotIndex, 'agent');
+        return result(res.message);
+      }
+      const res = await performAgentAction('plant', target, () =>
+        useGardenStore.getState().plantSeed(plantType, target, 'agent'),
+      );
       return res.ok ? result(res.message, gardenSnapshot()) : result(res.message);
     },
   },
@@ -198,7 +234,15 @@ export const gardenTools: GardenTool[] = [
       'Water one plant by id. Water decays over time; plants below ~15% water lose health and can wither. Avoid watering plants that are already near 100% — overwatering slowly harms them.',
     inputSchema: plantIdSchema,
     async execute(input) {
-      const res = useGardenStore.getState().waterPlant(String(input.plantId ?? ''), 'agent');
+      const plantId = String(input.plantId ?? '');
+      const plant = currentPlant(plantId);
+      if (!plant || plant.stage === 'withered') {
+        const res = useGardenStore.getState().waterPlant(plantId, 'agent');
+        return result(res.message);
+      }
+      const res = await performAgentAction('water', plant.plotIndex, () =>
+        useGardenStore.getState().waterPlant(plantId, 'agent'),
+      );
       return result(res.message);
     },
   },
@@ -207,8 +251,25 @@ export const gardenTools: GardenTool[] = [
     description: 'Water every plant whose water level is below 35%. Efficient routine care in one call.',
     inputSchema: emptySchema,
     async execute() {
-      const res = useGardenStore.getState().waterAllThirsty('agent');
-      return result(res.message);
+      const state = useGardenStore.getState();
+      state.tickAll();
+      const thirsty = Object.values(useGardenStore.getState().plants).filter(
+        (plant) => plant.stage !== 'withered' && plant.water < 35,
+      );
+      if (thirsty.length === 0) {
+        return result(state.waterAllThirsty('agent').message);
+      }
+      const watered: Plant[] = [];
+      for (const plant of thirsty) {
+        const res = await performAgentAction('water', plant.plotIndex, () =>
+          useGardenStore.getState().waterPlant(plant.id, 'agent'),
+        );
+        if (res.ok) watered.push(plant);
+      }
+      const names = watered.map((plant) => `${PLANT_TYPES[plant.type].name} (${plant.id})`).join(', ');
+      return result(
+        `Watered ${watered.length} thirsty plant${watered.length === 1 ? '' : 's'}: ${names}.`,
+      );
     },
   },
   {
@@ -217,7 +278,15 @@ export const gardenTools: GardenTool[] = [
       'Harvest one plant by id. Only plants with readyToHarvest = true can be harvested; harvesting removes the plant, frees its plot, and adds produce to the basket.',
     inputSchema: plantIdSchema,
     async execute(input) {
-      const res = useGardenStore.getState().harvestPlant(String(input.plantId ?? ''), 'agent');
+      const plantId = String(input.plantId ?? '');
+      const plant = currentPlant(plantId);
+      if (!plant || plant.stage === 'withered' || !plant.readyToHarvest) {
+        const res = useGardenStore.getState().harvestPlant(plantId, 'agent');
+        return result(res.message);
+      }
+      const res = await performAgentAction('harvest', plant.plotIndex, () =>
+        useGardenStore.getState().harvestPlant(plantId, 'agent'),
+      );
       return res.ok ? result(res.message, gardenSnapshot()) : result(res.message);
     },
   },
@@ -226,8 +295,26 @@ export const gardenTools: GardenTool[] = [
     description: 'Harvest every plant that is currently ready. Frees those plots for replanting.',
     inputSchema: emptySchema,
     async execute() {
-      const res = useGardenStore.getState().harvestAllReady('agent');
-      return res.ok ? result(res.message, gardenSnapshot()) : result(res.message);
+      const state = useGardenStore.getState();
+      state.tickAll();
+      const ready = Object.values(useGardenStore.getState().plants).filter(
+        (plant) => plant.readyToHarvest,
+      );
+      if (ready.length === 0) {
+        return result(state.harvestAllReady('agent').message);
+      }
+      const harvested: Plant[] = [];
+      for (const plant of ready) {
+        const res = await performAgentAction('harvest', plant.plotIndex, () =>
+          useGardenStore.getState().harvestPlant(plant.id, 'agent'),
+        );
+        if (res.ok) harvested.push(plant);
+      }
+      const names = harvested.map((plant) => `${PLANT_TYPES[plant.type].name} (${plant.id})`).join(', ');
+      return result(
+        `Harvested ${harvested.length} plant${harvested.length === 1 ? '' : 's'}: ${names}.`,
+        gardenSnapshot(),
+      );
     },
   },
   {
@@ -236,7 +323,15 @@ export const gardenTools: GardenTool[] = [
       'Remove a withered plant by id to free its plot. Only withered plants can be removed — living plants are never destroyed by this tool.',
     inputSchema: plantIdSchema,
     async execute(input) {
-      const res = useGardenStore.getState().removePlant(String(input.plantId ?? ''), 'agent');
+      const plantId = String(input.plantId ?? '');
+      const plant = currentPlant(plantId);
+      if (!plant || plant.stage !== 'withered') {
+        const res = useGardenStore.getState().removePlant(plantId, 'agent');
+        return result(res.message);
+      }
+      const res = await performAgentAction('remove', plant.plotIndex, () =>
+        useGardenStore.getState().removePlant(plantId, 'agent'),
+      );
       return result(res.message);
     },
   },

@@ -7,9 +7,11 @@ const COUNT = 12;
 const DURATION = 0.9;
 
 const COLORS: Record<GardenEvent['kind'], string> = {
+  inspect: '#8ce6ff',
   plant: '#9fe870',
   water: '#6cb8ff',
   harvest: '#ffd66e',
+  remove: '#d5dde5',
 };
 
 export function ParticleBurst({ kind }: { kind: GardenEvent['kind'] }) {
@@ -42,7 +44,7 @@ export function ParticleBurst({ kind }: { kind: GardenEvent['kind'] }) {
       mat.opacity = 1 - t;
       if (kind === 'water') {
         child.position.set(s.x * 0.45 * (1 + s.jitter), 2.3 - t * 2.0, s.z * 0.45 * (1 + s.jitter));
-      } else if (kind === 'harvest') {
+      } else if (kind === 'harvest' || kind === 'remove') {
         child.position.set(s.x * t * 1.1, 0.3 + t * 1.5, s.z * t * 1.1);
       } else {
         child.position.set(s.x * t * 0.7, 0.25 + t * 0.5, s.z * t * 0.7);

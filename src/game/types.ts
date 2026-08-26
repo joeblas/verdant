@@ -35,7 +35,9 @@ export interface ActivityEntry {
 
 export interface GardenEvent {
   id: number;
-  kind: 'plant' | 'water' | 'harvest';
-  plotIndex: number;
+  kind: 'inspect' | 'plant' | 'water' | 'harvest' | 'remove';
+  plotIndex: number | null;
+  actor: Actor;
+  phase: 'intent' | 'effect';
   at: number;
 }

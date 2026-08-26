@@ -2,13 +2,8 @@ import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { PLOT_COUNT } from '../state/gardenStore';
+import { GardenBot } from './GardenBot';
 import { Plot } from './Plot';
-
-export function plotPosition(index: number): [number, number, number] {
-  const row = Math.floor(index / 4);
-  const col = index % 4;
-  return [(col - 1.5) * 2.2, 0, (row - 1.5) * 2.2];
-}
 
 function Daylight() {
   return (
@@ -107,6 +102,7 @@ export function Scene() {
       </mesh>
 
       <GardenBorder />
+      <GardenBot />
       {plots.map((i) => (
         <Plot key={i} index={i} />
       ))}
