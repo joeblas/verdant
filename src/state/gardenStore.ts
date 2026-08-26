@@ -32,7 +32,7 @@ interface GardenState extends PersistedState {
   harvestPlant: (plantId: string, actor: Actor) => ActionResult;
   harvestAllReady: (actor: Actor) => ActionResult;
   removePlant: (plantId: string, actor: Actor) => ActionResult;
-  signalAgentAction: (kind: GardenEvent['kind'], plotIndex: number | null) => void;
+  signalAgentAction: (kind: GardenEvent['kind'], plotIndex: number | null) => number;
   signalAgentInspection: () => void;
   tickAll: () => void;
 }
@@ -103,12 +103,21 @@ export const useGardenStore = create<GardenState>()((set, get) => {
     actor: Actor,
     phase: GardenEvent['phase'] = 'effect',
   ) => {
+    const event: GardenEvent = {
+      id: ++eventCounter,
+      kind,
+      plotIndex,
+      actor,
+      phase,
+      at: Date.now(),
+    };
     set((state) => ({
       lastEvents: [
         ...state.lastEvents.slice(-19),
-        { id: ++eventCounter, kind, plotIndex, actor, phase, at: Date.now() },
+        event,
       ],
     }));
+    return event.id;
   };
 
   const fail = (message: string): ActionResult => ({ ok: false, message });

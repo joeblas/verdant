@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { BOT_ACTION_MS, BOT_TRAVEL_MS } from '../game/agentChoreography';
+import {
+  BOT_ACTION_MS,
+  botTravelMs,
+  signalBotArrival,
+} from '../game/agentChoreography';
 import { plotPosition } from '../game/layout';
 import type { GardenEvent } from '../game/types';
 import { useGardenStore } from '../state/gardenStore';
 
 const HOME = new THREE.Vector3(-5.05, 0.08, -3.7);
-const TRAVEL_SECONDS = BOT_TRAVEL_MS / 1000;
 const ACTION_SECONDS = BOT_ACTION_MS / 1000;
 
 const ACTION_COLORS: Record<GardenEvent['kind'], string> = {
@@ -23,6 +26,8 @@ interface BotJob {
   from: THREE.Vector3;
   target: THREE.Vector3;
   startedAt: number;
+  travelSeconds: number;
+  arrivalSignaled: boolean;
 }
 
 function smoothstep(t: number): number {
@@ -98,6 +103,8 @@ export function GardenBot() {
   const head = useRef<THREE.Group>(null);
   const leftArm = useRef<THREE.Group>(null);
   const rightArm = useRef<THREE.Group>(null);
+  const leftLeg = useRef<THREE.Group>(null);
+  const rightLeg = useRef<THREE.Group>(null);
   const statusLight = useRef<THREE.MeshStandardMaterial>(null);
   const queue = useRef<GardenEvent[]>([]);
   const active = useRef<BotJob | null>(null);
@@ -139,11 +146,14 @@ export function GardenBot() {
             const approachZ = Math.sign(z) * 0.92;
             return new THREE.Vector3(x + approachX, 0.08, z + approachZ);
           })();
+      const from = current.current.clone();
       active.current = {
         event,
-        from: current.current.clone(),
+        from,
         target,
         startedAt: clock.elapsedTime,
+        travelSeconds: botTravelMs(from.distanceTo(target)) / 1000,
+        arrivalSignaled: false,
       };
       setActiveKind(event.kind);
     }
@@ -157,6 +167,8 @@ export function GardenBot() {
       if (body.current) body.current.rotation.set(0, 0, 0);
       if (leftArm.current) leftArm.current.rotation.z = 0.12;
       if (rightArm.current) rightArm.current.rotation.z = -0.12;
+      if (leftLeg.current) leftLeg.current.rotation.x = 0;
+      if (rightLeg.current) rightLeg.current.rotation.x = 0;
       if (statusLight.current) statusLight.current.color.set('#8ce6ff');
       return;
     }
@@ -168,20 +180,30 @@ export function GardenBot() {
       robot.rotation.y = Math.atan2(directionX, directionZ);
     }
 
-    if (elapsed < TRAVEL_SECONDS) {
-      const t = smoothstep(elapsed / TRAVEL_SECONDS);
+    if (elapsed < job.travelSeconds) {
+      const t = smoothstep(elapsed / job.travelSeconds);
+      const distance = job.from.distanceTo(job.target);
+      const step = t * distance * 6.5;
       current.current.lerpVectors(job.from, job.target, t);
       robot.position.set(
         current.current.x,
-        current.current.y + Math.sin(t * Math.PI) * 0.9,
+        current.current.y + Math.abs(Math.sin(step)) * 0.055,
         current.current.z,
       );
-      if (body.current) body.current.rotation.z = Math.sin(t * Math.PI * 2) * 0.12;
-      if (leftArm.current) leftArm.current.rotation.z = 0.5;
-      if (rightArm.current) rightArm.current.rotation.z = -0.5;
+      if (body.current) body.current.rotation.z = Math.sin(step) * 0.055;
+      if (leftArm.current) leftArm.current.rotation.x = Math.sin(step) * 0.65;
+      if (rightArm.current) rightArm.current.rotation.x = -Math.sin(step) * 0.65;
+      if (leftLeg.current) leftLeg.current.rotation.x = -Math.sin(step) * 0.55;
+      if (rightLeg.current) rightLeg.current.rotation.x = Math.sin(step) * 0.55;
     } else {
-      const actionT = Math.min((elapsed - TRAVEL_SECONDS) / ACTION_SECONDS, 1);
+      if (!job.arrivalSignaled) {
+        job.arrivalSignaled = true;
+        if (job.event.kind !== 'inspect') signalBotArrival(job.event.id);
+      }
+      const actionT = Math.min((elapsed - job.travelSeconds) / ACTION_SECONDS, 1);
       robot.position.set(job.target.x, job.target.y, job.target.z);
+      if (leftLeg.current) leftLeg.current.rotation.x = 0;
+      if (rightLeg.current) rightLeg.current.rotation.x = 0;
       if (statusLight.current) statusLight.current.color.set(ACTION_COLORS[job.event.kind]);
 
       if (job.event.kind === 'inspect') {
@@ -205,7 +227,7 @@ export function GardenBot() {
       }
     }
 
-    if (elapsed >= TRAVEL_SECONDS + ACTION_SECONDS) {
+    if (elapsed >= job.travelSeconds + ACTION_SECONDS) {
       current.current.copy(job.target);
       active.current = null;
       setActiveKind(null);
@@ -266,14 +288,18 @@ export function GardenBot() {
           </mesh>
         </group>
 
-        <mesh castShadow position={[-0.2, 0.24, 0]}>
-          <capsuleGeometry args={[0.11, 0.28, 4, 8]} />
-          <meshStandardMaterial color="#52696c" metalness={0.4} roughness={0.5} />
-        </mesh>
-        <mesh castShadow position={[0.2, 0.24, 0]}>
-          <capsuleGeometry args={[0.11, 0.28, 4, 8]} />
-          <meshStandardMaterial color="#52696c" metalness={0.4} roughness={0.5} />
-        </mesh>
+        <group ref={leftLeg} position={[-0.2, 0.4, 0]}>
+          <mesh castShadow position={[0, -0.16, 0]}>
+            <capsuleGeometry args={[0.11, 0.28, 4, 8]} />
+            <meshStandardMaterial color="#52696c" metalness={0.4} roughness={0.5} />
+          </mesh>
+        </group>
+        <group ref={rightLeg} position={[0.2, 0.4, 0]}>
+          <mesh castShadow position={[0, -0.16, 0]}>
+            <capsuleGeometry args={[0.11, 0.28, 4, 8]} />
+            <meshStandardMaterial color="#52696c" metalness={0.4} roughness={0.5} />
+          </mesh>
+        </group>
         <Tool kind={activeKind} />
       </group>
     </group>

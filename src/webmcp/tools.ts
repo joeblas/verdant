@@ -1,5 +1,5 @@
 import { PLANT_TYPE_LIST, PLANT_TYPES, isPlantTypeId } from '../game/plants';
-import { BOT_ACTION_MS, BOT_TRAVEL_MS, waitForBot } from '../game/agentChoreography';
+import { BOT_ACTION_MS, waitForBot, waitForBotArrival } from '../game/agentChoreography';
 import type { Plant } from '../game/types';
 import { PLOT_COUNT, useGardenStore } from '../state/gardenStore';
 
@@ -63,8 +63,8 @@ async function performAgentAction<T>(
   plotIndex: number,
   action: () => T,
 ): Promise<T> {
-  useGardenStore.getState().signalAgentAction(kind, plotIndex);
-  await waitForBot(BOT_TRAVEL_MS);
+  const eventId = useGardenStore.getState().signalAgentAction(kind, plotIndex);
+  await waitForBotArrival(eventId);
   const outcome = action();
   await waitForBot(BOT_ACTION_MS);
   return outcome;
