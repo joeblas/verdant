@@ -1,6 +1,6 @@
 import { PLANT_TYPES, type PlantTypeId } from './plants';
 import { BOT_ACTION_MS, waitForBot, waitForBotArrival } from './agentChoreography';
-import type { ActionResult } from './types';
+import type { ActionResult, Plant } from './types';
 import {
   type AgentActionKind,
   type AgentJob,
@@ -30,7 +30,10 @@ let actionTail: Promise<void> = Promise.resolve();
 
 /** A deliberately short, observable "day" for the accelerated judging demo. */
 export const ACCELERATED_DAY_MS = 60_000;
-const CARE_CHECK_MS = 1_000;
+const CARE_CHECK_MS = 500;
+const CARE_WATER_THRESHOLD = 65;
+/** A closed loop of adjacent plots so repeated care never teleports across the garden. */
+const CARE_ROUTE = [0, 1, 2, 3, 7, 11, 15, 14, 13, 12, 8, 9, 10, 6, 5, 4];
 
 function makeId(prefix: string): string {
   sequence++;
@@ -90,6 +93,22 @@ async function drainQueue(): Promise<void> {
           const outcome = await performAgentAction(action);
           if (!outcome.ok) throw new Error(outcome.message);
           useAgentStore.getState().completeJobAction(queued.id, outcome.message);
+          if (queued.aftercareMs > 0 && action.kind === 'plant') {
+            const planted = Object.values(useGardenStore.getState().plants).find(
+              (plant) => plant.plotIndex === action.plotIndex,
+            );
+            if (!planted) throw new Error(`The new plant in plot ${action.plotIndex} disappeared.`);
+            const waterLabel = `Watering newly planted ${PLANT_TYPES[planted.type].name} in plot ${planted.plotIndex}`;
+            useAgentStore.getState().setJobAction(queued.id, waterLabel, planted.plotIndex);
+            const waterOutcome = await performAgentAction({
+              kind: 'water',
+              plotIndex: planted.plotIndex,
+              plantId: planted.id,
+              label: waterLabel,
+            });
+            if (!waterOutcome.ok) throw new Error(waterOutcome.message);
+            useAgentStore.getState().completeJobAction(queued.id, waterOutcome.message);
+          }
         }
         if (queued.aftercareMs > 0) {
           await maintainGarden(queued.id, queued.aftercareMs);
@@ -108,39 +127,88 @@ async function drainQueue(): Promise<void> {
 
 async function maintainGarden(jobId: string, durationMs: number): Promise<void> {
   const endsAt = Date.now() + durationMs;
+  let routeCursor = 0;
   useAgentStore.getState().setJobAction(
     jobId,
     'Keeping every plant healthy through one accelerated day',
     null,
   );
 
-  while (Date.now() < endsAt) {
+  while (true) {
     const garden = useGardenStore.getState();
     garden.tickAll();
     const plants = Object.values(useGardenStore.getState().plants);
     const withered = plants.find((plant) => plant.stage === 'withered');
     if (withered) {
-      throw new Error(`${PLANT_TYPES[withered.type].name} in plot ${withered.plotIndex} withered during aftercare.`);
+      throw new Error(
+        `${PLANT_TYPES[withered.type].name} in plot ${withered.plotIndex} withered during aftercare.`,
+      );
     }
-    if (plants.some((plant) => plant.water < 35)) {
-      garden.waterAllThirsty('agent');
+
+    if (Date.now() >= endsAt) break;
+    const plantsByPlot = new Map(plants.map((plant) => [plant.plotIndex, plant]));
+    let plantToWater: Plant | undefined;
+    for (let offset = 0; offset < CARE_ROUTE.length; offset++) {
+      const routeIndex = (routeCursor + offset) % CARE_ROUTE.length;
+      const plant = plantsByPlot.get(CARE_ROUTE[routeIndex]);
+      if (plant && plant.water < CARE_WATER_THRESHOLD) {
+        plantToWater = plant;
+        routeCursor = (routeIndex + 1) % CARE_ROUTE.length;
+        break;
+      }
     }
-    await waitForBot(Math.min(CARE_CHECK_MS, Math.max(0, endsAt - Date.now())));
+
+    if (!plantToWater) {
+      await waitForBot(Math.min(CARE_CHECK_MS, Math.max(0, endsAt - Date.now())));
+      continue;
+    }
+
+    const label = `Watering ${PLANT_TYPES[plantToWater.type].name} in plot ${plantToWater.plotIndex}`;
+    useAgentStore.getState().setJobAction(jobId, label, plantToWater.plotIndex);
+    const outcome = await performAgentAction({
+      kind: 'water',
+      plotIndex: plantToWater.plotIndex,
+      plantId: plantToWater.id,
+      label,
+    });
+    if (!outcome.ok && useGardenStore.getState().plants[plantToWater.id]) {
+      throw new Error(outcome.message);
+    }
   }
 
-  const garden = useGardenStore.getState();
-  garden.tickAll();
-  const plants = Object.values(useGardenStore.getState().plants);
-  const withered = plants.find((plant) => plant.stage === 'withered');
-  if (withered) {
-    throw new Error(`${PLANT_TYPES[withered.type].name} in plot ${withered.plotIndex} withered during aftercare.`);
+  for (const plotIndex of CARE_ROUTE) {
+    const garden = useGardenStore.getState();
+    garden.tickAll();
+    const plant = Object.values(useGardenStore.getState().plants).find(
+      (candidate) => candidate.plotIndex === plotIndex,
+    );
+    if (!plant) continue;
+    if (plant.stage === 'withered') {
+      throw new Error(
+        `${PLANT_TYPES[plant.type].name} in plot ${plant.plotIndex} withered during aftercare.`,
+      );
+    }
+    const label = `Final watering for ${PLANT_TYPES[plant.type].name} in plot ${plant.plotIndex}`;
+    useAgentStore.getState().setJobAction(jobId, label, plant.plotIndex);
+    const outcome = await performAgentAction({
+      kind: 'water',
+      plotIndex: plant.plotIndex,
+      plantId: plant.id,
+      label,
+    });
+    if (!outcome.ok && useGardenStore.getState().plants[plant.id]) {
+      throw new Error(outcome.message);
+    }
   }
-  for (const plant of plants) {
-    if (plant.water < 45) garden.waterPlant(plant.id, 'agent');
-  }
+
+  useAgentStore.getState().setJobAction(
+    jobId,
+    'Finished visible care through one accelerated day',
+    null,
+  );
   useAgentStore.getState().completeJobAction(
     jobId,
-    'Kept the garden healthy through one accelerated day.',
+    'The robot kept the garden healthy through one accelerated day.',
   );
 }
 
@@ -149,11 +217,14 @@ export function enqueueAgentJob(
   actions: AgentJobAction[],
   aftercareMs = 0,
 ): AgentJob {
+  const initialCareActions = aftercareMs > 0
+    ? actions.filter((action) => action.kind === 'plant').length
+    : 0;
   const job: AgentJob = {
     id: makeId('job'),
     label,
     status: 'queued',
-    totalActions: actions.length + (aftercareMs > 0 ? 1 : 0),
+    totalActions: actions.length + initialCareActions + (aftercareMs > 0 ? 1 : 0),
     completedActions: 0,
     currentAction: null,
     currentPlotIndex: null,
@@ -197,7 +268,11 @@ export function startGardenPlan(planId: string): AgentJob | null {
   );
   if (plan.assignments.some((assignment) => occupied.has(assignment.plotIndex))) return null;
 
-  const actions = plan.assignments.map((assignment) => ({
+  const routeOrder = new Map(CARE_ROUTE.map((plotIndex, index) => [plotIndex, index]));
+  const assignments = [...plan.assignments].sort(
+    (a, b) => routeOrder.get(a.plotIndex)! - routeOrder.get(b.plotIndex)!,
+  );
+  const actions = assignments.map((assignment) => ({
     kind: 'plant' as const,
     plotIndex: assignment.plotIndex,
     plantType: assignment.plantType,

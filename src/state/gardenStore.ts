@@ -11,6 +11,7 @@ import type {
 
 export const PLOT_COUNT = 16;
 export const DEMO_TIME_SCALE = 12;
+export const DEMO_CARE_TIME_SCALE = 6;
 const STORAGE_KEY = 'verdant-garden-v1';
 const MAX_ACTIVITY = 40;
 
@@ -62,12 +63,13 @@ function emptyPlots(plants: Record<string, Plant>): number[] {
 function tickPlants(
   plants: Record<string, Plant>,
   now: number,
-  timeScale: number,
+  growthTimeScale: number,
+  careTimeScale: number,
 ): Record<string, Plant> {
   let changed = false;
   const next: Record<string, Plant> = {};
   for (const [id, plant] of Object.entries(plants)) {
-    const advanced = advancePlant(plant, now, timeScale);
+    const advanced = advancePlant(plant, now, growthTimeScale, careTimeScale);
     if (advanced !== plant) changed = true;
     next[id] = advanced;
   }
@@ -349,6 +351,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
         get().plants,
         now,
         get().demoMode ? DEMO_TIME_SCALE : 1,
+        get().demoMode ? DEMO_CARE_TIME_SCALE : 1,
       );
       if (plants !== get().plants) set({ plants });
     },

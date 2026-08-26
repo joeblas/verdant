@@ -1,5 +1,5 @@
 export const BOT_ACTION_MS = 780;
-export const BOT_WALK_SPEED = 2.6;
+export const BOT_WALK_SPEED = 5.2;
 
 const MIN_TRAVEL_MS = 350;
 const ARRIVAL_TIMEOUT_MS = 12_000;

@@ -78,8 +78,9 @@ applicable:
   (state persists in `localStorage` and catches up on return).
 - **A bright low-poly daylight scene** with widened walkable aisles, swaying
   plants, harvest sparkles, and optional synthesized wind + birdsong.
-- **A 12× demo season** with a curated showcase garden, so planting, care,
-  withering, and harvesting can all be demonstrated in a short judging session.
+- **A balanced demo season** with 12× growth and 6× care needs, so planting,
+  tending, withering, and harvesting fit a short judging session while remaining
+  physically achievable by the on-screen robot.
 
 ## How it works
 

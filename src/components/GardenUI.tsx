@@ -112,7 +112,7 @@ function DemoControls() {
       <button
         className={`demo-toggle ${demoMode ? 'on' : ''}`}
         onClick={() => setDemoMode(!demoMode)}
-        title="Accelerate plant growth and care for a short judge demo"
+        title="Accelerate growth 12× and care needs 6× for a short, physically tendable demo"
         disabled={robotBusy}
       >
         {demoMode ? `demo ${DEMO_TIME_SCALE}×` : 'demo off'}
@@ -162,7 +162,7 @@ function PlanPreviewPanel() {
       <p>{plan.rationale}</p>
       {plan.aftercare === 'one_accelerated_day' && (
         <p className="tools-note">
-          Includes automatic care through one accelerated day after planting.
+          Includes visible robot care through one accelerated day after planting.
         </p>
       )}
       <div className="plan-assignment-list">

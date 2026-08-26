@@ -28,4 +28,12 @@ describe('advancePlant', () => {
     expect(60 - demo.water).toBeCloseTo((60 - normal.water) * 12);
     expect(demo.lastTickAt).toBe(BASE_TIME + 1_000);
   });
+
+  it('can balance accelerated growth against a physically tendable care rate', () => {
+    const balanced = advancePlant(lettuce(), BASE_TIME + 1_000, 12, 6);
+    const normal = advancePlant(lettuce(), BASE_TIME + 1_000, 1, 1);
+
+    expect(balanced.growth).toBeCloseTo(normal.growth * 12);
+    expect(60 - balanced.water).toBeCloseTo((60 - normal.water) * 6);
+  });
 });

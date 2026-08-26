@@ -22,25 +22,31 @@ export function stageForGrowth(growth: number): GrowthStage {
  * Advances a plant using wall-clock elapsed time, so the garden keeps
  * growing while the tab is closed. Pure: returns a new plant object.
  */
-export function advancePlant(plant: Plant, now: number, timeScale = 1): Plant {
+export function advancePlant(
+  plant: Plant,
+  now: number,
+  growthTimeScale = 1,
+  careTimeScale = growthTimeScale,
+): Plant {
   if (plant.stage === 'withered') {
     return plant.lastTickAt === now ? plant : { ...plant, lastTickAt: now };
   }
 
   const type = PLANT_TYPES[plant.type];
-  const elapsedMs = Math.max(0, now - plant.lastTickAt) * timeScale;
-  const elapsedMin = elapsedMs / 60_000;
+  const realElapsedMs = Math.max(0, now - plant.lastTickAt);
+  const growthElapsedMs = realElapsedMs * growthTimeScale;
+  const careElapsedMin = (realElapsedMs * careTimeScale) / 60_000;
 
   let { water, health, growth } = plant;
 
-  water = clamp(water - type.waterDrainPerMin * elapsedMin, 0, 100);
+  water = clamp(water - type.waterDrainPerMin * careElapsedMin, 0, 100);
 
   if (water <= THIRST_THRESHOLD) {
-    health -= THIRST_DAMAGE_PER_MIN * elapsedMin;
+    health -= THIRST_DAMAGE_PER_MIN * careElapsedMin;
   } else if (water >= OVERWATER_THRESHOLD) {
-    health -= OVERWATER_DAMAGE_PER_MIN * elapsedMin;
+    health -= OVERWATER_DAMAGE_PER_MIN * careElapsedMin;
   } else {
-    health += REGEN_PER_MIN * elapsedMin;
+    health += REGEN_PER_MIN * careElapsedMin;
   }
   health = clamp(health, 0, 100);
 
@@ -57,7 +63,7 @@ export function advancePlant(plant: Plant, now: number, timeScale = 1): Plant {
 
   if (growth < 1 && water > THIRST_THRESHOLD) {
     const rate = health < 30 ? 0.5 : 1;
-    growth = clamp(growth + (elapsedMs / type.growthMs) * rate, 0, 1);
+    growth = clamp(growth + (growthElapsedMs / type.growthMs) * rate, 0, 1);
   }
 
   const stage = stageForGrowth(growth);

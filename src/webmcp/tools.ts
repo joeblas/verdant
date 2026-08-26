@@ -8,7 +8,12 @@ import {
 } from '../game/agentJobs';
 import type { Plant } from '../game/types';
 import type { GardenPlanAssignment } from '../state/agentStore';
-import { DEMO_TIME_SCALE, PLOT_COUNT, useGardenStore } from '../state/gardenStore';
+import {
+  DEMO_CARE_TIME_SCALE,
+  DEMO_TIME_SCALE,
+  PLOT_COUNT,
+  useGardenStore,
+} from '../state/gardenStore';
 
 interface TextContent {
   type: 'text';
@@ -64,6 +69,7 @@ function gardenSnapshot() {
     plantCount: plants.length,
     demoMode: after.demoMode,
     timeScale: after.demoMode ? DEMO_TIME_SCALE : 1,
+    careTimeScale: after.demoMode ? DEMO_CARE_TIME_SCALE : 1,
   };
 }
 
