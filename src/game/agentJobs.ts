@@ -20,12 +20,17 @@ export interface AgentJobAction {
 interface QueuedJob {
   id: string;
   actions: AgentJobAction[];
+  aftercareMs: number;
 }
 
 const queue: QueuedJob[] = [];
 let draining = false;
 let sequence = 0;
 let actionTail: Promise<void> = Promise.resolve();
+
+/** A deliberately short, observable "day" for the accelerated judging demo. */
+export const ACCELERATED_DAY_MS = 60_000;
+const CARE_CHECK_MS = 1_000;
 
 function makeId(prefix: string): string {
   sequence++;
@@ -86,6 +91,9 @@ async function drainQueue(): Promise<void> {
           if (!outcome.ok) throw new Error(outcome.message);
           useAgentStore.getState().completeJobAction(queued.id, outcome.message);
         }
+        if (queued.aftercareMs > 0) {
+          await maintainGarden(queued.id, queued.aftercareMs);
+        }
         useAgentStore.getState().completeJob(queued.id);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -98,12 +106,54 @@ async function drainQueue(): Promise<void> {
   }
 }
 
-export function enqueueAgentJob(label: string, actions: AgentJobAction[]): AgentJob {
+async function maintainGarden(jobId: string, durationMs: number): Promise<void> {
+  const endsAt = Date.now() + durationMs;
+  useAgentStore.getState().setJobAction(
+    jobId,
+    'Keeping every plant healthy through one accelerated day',
+    null,
+  );
+
+  while (Date.now() < endsAt) {
+    const garden = useGardenStore.getState();
+    garden.tickAll();
+    const plants = Object.values(useGardenStore.getState().plants);
+    const withered = plants.find((plant) => plant.stage === 'withered');
+    if (withered) {
+      throw new Error(`${PLANT_TYPES[withered.type].name} in plot ${withered.plotIndex} withered during aftercare.`);
+    }
+    if (plants.some((plant) => plant.water < 35)) {
+      garden.waterAllThirsty('agent');
+    }
+    await waitForBot(Math.min(CARE_CHECK_MS, Math.max(0, endsAt - Date.now())));
+  }
+
+  const garden = useGardenStore.getState();
+  garden.tickAll();
+  const plants = Object.values(useGardenStore.getState().plants);
+  const withered = plants.find((plant) => plant.stage === 'withered');
+  if (withered) {
+    throw new Error(`${PLANT_TYPES[withered.type].name} in plot ${withered.plotIndex} withered during aftercare.`);
+  }
+  for (const plant of plants) {
+    if (plant.water < 45) garden.waterPlant(plant.id, 'agent');
+  }
+  useAgentStore.getState().completeJobAction(
+    jobId,
+    'Kept the garden healthy through one accelerated day.',
+  );
+}
+
+export function enqueueAgentJob(
+  label: string,
+  actions: AgentJobAction[],
+  aftercareMs = 0,
+): AgentJob {
   const job: AgentJob = {
     id: makeId('job'),
     label,
     status: 'queued',
-    totalActions: actions.length,
+    totalActions: actions.length + (aftercareMs > 0 ? 1 : 0),
     completedActions: 0,
     currentAction: null,
     currentPlotIndex: null,
@@ -114,7 +164,7 @@ export function enqueueAgentJob(label: string, actions: AgentJobAction[]): Agent
     finishedAt: null,
   };
   useAgentStore.getState().createJob(job);
-  queue.push({ id: job.id, actions });
+  queue.push({ id: job.id, actions, aftercareMs });
   void drainQueue();
   return job;
 }
@@ -123,12 +173,14 @@ export function createGardenPlanPreview(
   name: string,
   rationale: string,
   assignments: GardenPlanPreview['assignments'],
+  aftercare: GardenPlanPreview['aftercare'] = 'none',
 ): GardenPlanPreview {
   const preview: GardenPlanPreview = {
     id: makeId('plan'),
     name,
     rationale,
     assignments,
+    aftercare,
     createdAt: Date.now(),
   };
   useAgentStore.getState().setPlanPreview(preview);
@@ -154,7 +206,12 @@ export function startGardenPlan(planId: string): AgentJob | null {
   if (actions.length === 0) return null;
 
   agent.clearPlanPreview(plan.id);
-  return enqueueAgentJob(`Planting “${plan.name}”`, actions);
+  const aftercareMs = plan.aftercare === 'one_accelerated_day' ? ACCELERATED_DAY_MS : 0;
+  return enqueueAgentJob(
+    aftercareMs > 0 ? `Planting and tending “${plan.name}”` : `Planting “${plan.name}”`,
+    actions,
+    aftercareMs,
+  );
 }
 
 export function agentJobSnapshot(jobId?: string): AgentJob | null {

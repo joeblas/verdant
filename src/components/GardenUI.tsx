@@ -160,6 +160,11 @@ function PlanPreviewPanel() {
         <span>{plan.assignments.length} plots</span>
       </div>
       <p>{plan.rationale}</p>
+      {plan.aftercare === 'one_accelerated_day' && (
+        <p className="tools-note">
+          Includes automatic care through one accelerated day after planting.
+        </p>
+      )}
       <div className="plan-assignment-list">
         {plan.assignments.map((assignment) => {
           const type = PLANT_TYPES[assignment.plantType];

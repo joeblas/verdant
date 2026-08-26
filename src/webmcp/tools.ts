@@ -221,6 +221,12 @@ export const gardenTools: GardenTool[] = [
             additionalProperties: false,
           },
         },
+        aftercare: {
+          type: 'string',
+          enum: ['none', 'one_accelerated_day'],
+          description:
+            'Set to "one_accelerated_day" when the person asks you to keep the approved planting healthy afterward. The browser will own that 60-second demo-day care session, so it continues after your turn ends.',
+        },
       },
       required: ['name', 'rationale', 'assignments'],
       additionalProperties: false,
@@ -262,9 +268,11 @@ export const gardenTools: GardenTool[] = [
       }
       if (assignments.length === 0) return result('The plan has no assignments to preview.');
 
-      const preview = createGardenPlanPreview(name, rationale, assignments);
+      const aftercare =
+        input.aftercare === 'one_accelerated_day' ? 'one_accelerated_day' : 'none';
+      const preview = createGardenPlanPreview(name, rationale, assignments, aftercare);
       return result(
-        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}. Nothing has been planted yet.`,
+        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}. Nothing has been planted yet.${aftercare === 'one_accelerated_day' ? ' After approval, the same background job will also keep the garden healthy through one accelerated day.' : ''}`,
         {
           plan: preview,
           nextStep: 'Ask the person to review the glowing plan, then call run_garden_plan with this planId after approval.',
@@ -275,7 +283,7 @@ export const gardenTools: GardenTool[] = [
   {
     name: 'run_garden_plan',
     description:
-      'Execute the currently visible planting preview after the person approves it. Returns immediately with a job id while the robot plants each assignment asynchronously. Poll get_agent_job for progress.',
+      'Execute the currently visible planting preview after the person approves it. Returns immediately with a job id while the browser plants each assignment and performs any aftercare included in the preview. Background aftercare continues even after your turn ends. Poll get_agent_job for progress.',
     inputSchema: {
       type: 'object',
       properties: {

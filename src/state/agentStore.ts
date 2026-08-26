@@ -16,6 +16,7 @@ export interface GardenPlanPreview {
   name: string;
   rationale: string;
   assignments: GardenPlanAssignment[];
+  aftercare: 'none' | 'one_accelerated_day';
   createdAt: number;
 }
 
@@ -52,7 +53,7 @@ interface AgentState {
   clearPlanPreview: (planId?: string) => void;
   createJob: (job: AgentJob) => void;
   startJob: (jobId: string) => void;
-  setJobAction: (jobId: string, label: string, plotIndex: number) => void;
+  setJobAction: (jobId: string, label: string, plotIndex: number | null) => void;
   completeJobAction: (jobId: string, message: string) => void;
   completeJob: (jobId: string) => void;
   failJob: (jobId: string, error: string) => void;

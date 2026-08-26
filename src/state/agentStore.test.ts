@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { createGardenPlanPreview } from '../game/agentJobs';
 import { latestAgentJob, type AgentJob, useAgentStore } from './agentStore';
 
 function queuedJob(): AgentJob {
@@ -49,5 +50,17 @@ describe('agent job progress', () => {
       completedActions: 1,
       currentAction: null,
     });
+  });
+
+  it('keeps an approved plan\'s aftercare commitment with the preview', () => {
+    const preview = createGardenPlanPreview(
+      'Pollinator mosaic',
+      'Diverse neighboring plants.',
+      [{ plotIndex: 0, plantType: 'lavender' }],
+      'one_accelerated_day',
+    );
+
+    expect(preview.aftercare).toBe('one_accelerated_day');
+    expect(useAgentStore.getState().planPreview?.aftercare).toBe('one_accelerated_day');
   });
 });

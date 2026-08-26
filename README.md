@@ -42,7 +42,9 @@ on read-only tools and walking through the widened aisles to plant, water,
 harvest, or clear each affected plot — the agent is a fellow gardener, not a
 macro. Bulk chores return immediately as observable background jobs with live
 progress, and complete planting layouts can be previewed as glowing ghost
-plants for human approval before the robot begins.
+plants for human approval before the robot begins. A preview can also include
+one accelerated demo-day of aftercare; once approved, that care is owned by the
+browser job and continues after the agent's turn ends.
 
 ### WebMCP tools
 
