@@ -374,7 +374,7 @@ export function RobotBody({
   });
 
   return (
-    <group ref={root} position={HOME.toArray()} scale={visualScale}>
+    <group ref={root} position={HOME.toArray()} scale={visualScale} visible={!docked}>
       <group ref={body}>
         <mesh castShadow position={[0, 0.76, 0]}>
           <dodecahedronGeometry args={[0.43, 0]} />
@@ -392,7 +392,7 @@ export function RobotBody({
         <group ref={head} position={[0, 1.32, 0]}>
           <mesh castShadow>
             <boxGeometry args={[0.72, 0.48, 0.56]} />
-            <meshStandardMaterial color="#d9e2dc" metalness={0.25} roughness={0.48} flatShading />
+            <meshStandardMaterial color={accent} metalness={0.25} roughness={0.48} flatShading />
           </mesh>
           <mesh position={[-0.18, 0.04, 0.29]}>
             <sphereGeometry args={[0.075, 8, 8]} />
