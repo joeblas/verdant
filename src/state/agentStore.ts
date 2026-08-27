@@ -21,6 +21,16 @@ export interface GardenPlanPreview {
   createdAt: number;
 }
 
+export type PlanApprovalSource = 'app' | 'webmcp';
+
+export interface PlanExecution {
+  planId: string;
+  planName: string;
+  jobId: string;
+  approvedVia: PlanApprovalSource;
+  approvedAt: number;
+}
+
 export interface AgentJob {
   id: string;
   label: string;
@@ -38,12 +48,14 @@ export interface AgentJob {
 
 interface AgentState {
   planPreview: GardenPlanPreview | null;
+  planExecutions: Record<string, PlanExecution>;
   jobs: Record<string, AgentJob>;
   jobOrder: string[];
   activeJobId: string | null;
 
   setPlanPreview: (preview: GardenPlanPreview) => void;
   clearPlanPreview: (planId?: string) => void;
+  recordPlanExecution: (execution: PlanExecution) => void;
   createJob: (job: AgentJob) => void;
   startJob: (jobId: string) => void;
   setJobAction: (jobId: string, label: string, plotIndex: number | null) => void;
@@ -57,6 +69,7 @@ const MAX_JOBS = 12;
 
 export const useAgentStore = create<AgentState>()((set) => ({
   planPreview: null,
+  planExecutions: {},
   jobs: {},
   jobOrder: [],
   activeJobId: null,
@@ -66,6 +79,13 @@ export const useAgentStore = create<AgentState>()((set) => ({
     set((state) =>
       !planId || state.planPreview?.id === planId ? { planPreview: null } : state,
     ),
+  recordPlanExecution: (execution) =>
+    set((state) => ({
+      planExecutions: {
+        ...state.planExecutions,
+        [execution.planId]: execution,
+      },
+    })),
   createJob: (job) =>
     set((state) => {
       const jobOrder = [job.id, ...state.jobOrder.filter((id) => id !== job.id)].slice(0, MAX_JOBS);

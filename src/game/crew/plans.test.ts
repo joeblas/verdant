@@ -21,6 +21,7 @@ function resetWorld() {
   useGardenStore.getState().resetGarden();
   useAgentStore.setState({
     planPreview: null,
+    planExecutions: {},
     jobs: {},
     jobOrder: [],
     activeJobId: null,
@@ -71,5 +72,30 @@ describe('plan helper policy', () => {
     const job = startGardenPlan(preview.id);
     expect(job).not.toBeNull();
     expect(useCrewStore.getState().desiredHelpers).toBe(3);
+  });
+
+  it('reconciles with a plan already approved in the app without starting it twice', () => {
+    const preview = createGardenPlanPreview(
+      'Shared approval',
+      'The app and agent should agree on one execution.',
+      [{ plotIndex: 11, plantType: 'lavender' }],
+    );
+
+    const startedInApp = startGardenPlan(preview.id, 'app');
+    const rediscoveredByAgent = startGardenPlan(preview.id, 'webmcp');
+
+    expect(startedInApp).not.toBeNull();
+    expect(rediscoveredByAgent?.id).toBe(startedInApp?.id);
+    expect(useAgentStore.getState().jobOrder).toEqual([startedInApp?.id]);
+    expect(useAgentStore.getState().planExecutions[preview.id]).toMatchObject({
+      planId: preview.id,
+      planName: preview.name,
+      jobId: startedInApp?.id,
+      approvedVia: 'app',
+    });
+    expect(useGardenStore.getState().activity[0]).toMatchObject({
+      actor: 'you',
+      message: expect.stringContaining(`Approved “${preview.name}”`),
+    });
   });
 });

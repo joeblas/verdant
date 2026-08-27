@@ -23,6 +23,7 @@ describe('agent job progress', () => {
   beforeEach(() => {
     useAgentStore.setState({
       planPreview: null,
+      planExecutions: {},
       jobs: {},
       jobOrder: [],
       activeJobId: null,

@@ -187,7 +187,7 @@ function PlanPreviewPanel() {
         <button className="btn" onClick={() => clearPlanPreview(plan.id)}>
           Dismiss
         </button>
-        <button className="btn primary" onClick={() => startGardenPlan(plan.id)}>
+        <button className="btn primary" onClick={() => startGardenPlan(plan.id, 'app')}>
           Approve & plant
         </button>
       </div>

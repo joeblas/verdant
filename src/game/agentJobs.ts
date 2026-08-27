@@ -1,5 +1,10 @@
 import { PLANT_TYPES } from './plants';
-import type { AgentJob, GardenPlanPreview } from '../state/agentStore';
+import type {
+  AgentJob,
+  GardenPlanPreview,
+  PlanApprovalSource,
+  PlanExecution,
+} from '../state/agentStore';
 import { useAgentStore } from '../state/agentStore';
 import { useCrewStore } from '../state/crewStore';
 import { useGardenStore } from '../state/gardenStore';
@@ -58,8 +63,27 @@ export function createGardenPlanPreview(
   return preview;
 }
 
-export function startGardenPlan(planId: string): AgentJob | null {
+export interface PlanExecutionSnapshot extends PlanExecution {
+  job: AgentJob | null;
+}
+
+export function planExecutionSnapshot(planId: string): PlanExecutionSnapshot | null {
+  const execution = useAgentStore.getState().planExecutions[planId];
+  if (!execution) return null;
+  return {
+    ...execution,
+    job: agentJobSnapshot(execution.jobId),
+  };
+}
+
+export function startGardenPlan(
+  planId: string,
+  approvedVia: PlanApprovalSource = 'webmcp',
+): AgentJob | null {
   const agent = useAgentStore.getState();
+  const prior = agent.planExecutions[planId];
+  if (prior) return agent.jobs[prior.jobId] ?? null;
+
   const plan = agent.planPreview;
   if (!plan || plan.id !== planId) return null;
 
@@ -90,7 +114,7 @@ export function startGardenPlan(planId: string): AgentJob | null {
 
   applyPlanHelpers(plan.helpers);
   agent.clearPlanPreview(plan.id);
-  return enqueueCrewJob({
+  const job = enqueueCrewJob({
     label:
       plan.aftercare === 'one_accelerated_day'
         ? `Planting and tending “${plan.name}”`
@@ -99,4 +123,16 @@ export function startGardenPlan(planId: string): AgentJob | null {
     aftercare: plan.aftercare,
     staffing: 'crew',
   });
+  agent.recordPlanExecution({
+    planId: plan.id,
+    planName: plan.name,
+    jobId: job.id,
+    approvedVia,
+    approvedAt: Date.now(),
+  });
+  useGardenStore.getState().recordActivity(
+    approvedVia === 'app' ? 'you' : 'agent',
+    `Approved “${plan.name}”; crew job ${job.id} started.`,
+  );
+  return job;
 }

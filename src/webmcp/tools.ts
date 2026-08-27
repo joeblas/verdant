@@ -3,13 +3,14 @@ import {
   agentJobSnapshot,
   createGardenPlanPreview,
   enqueueAgentJob,
+  planExecutionSnapshot,
   performAgentAction,
   startGardenPlan,
 } from '../game/agentJobs';
 import { parseHelperCount } from '../game/crew/ids';
 import { crewSnapshot, requestLeadInspection, setCrew } from '../game/crew/roster';
 import type { Plant } from '../game/types';
-import type { GardenPlanAssignment } from '../state/agentStore';
+import { useAgentStore, type GardenPlanAssignment } from '../state/agentStore';
 import {
   DEMO_CARE_TIME_SCALE,
   DEMO_TIME_SCALE,
@@ -64,6 +65,10 @@ function gardenSnapshot() {
     const plant = occupied.get(i);
     return plant ? { plotIndex: i, plant: summarizePlant(plant) } : { plotIndex: i, plant: null };
   });
+  const agent = useAgentStore.getState();
+  const latestExecution = Object.values(agent.planExecutions).sort(
+    (a, b) => b.approvedAt - a.approvedAt,
+  )[0];
   return {
     plots,
     emptyPlots: plots.filter((p) => p.plant === null).map((p) => p.plotIndex),
@@ -73,6 +78,13 @@ function gardenSnapshot() {
     timeScale: after.demoMode ? DEMO_TIME_SCALE : 1,
     careTimeScale: after.demoMode ? DEMO_CARE_TIME_SCALE : 1,
     crew: crewSnapshot(),
+    agent: {
+      planPreview: agent.planPreview,
+      activeOrLatestJob: agentJobSnapshot(),
+      latestPlanExecution: latestExecution
+        ? planExecutionSnapshot(latestExecution.planId)
+        : null,
+    },
   };
 }
 
@@ -117,7 +129,7 @@ export const gardenTools: GardenTool[] = [
   {
     name: 'get_garden_state',
     description:
-      'Get the full live state of the garden: every plot, every plant with its id, type, growth stage, health, water level, and whether it is ready to harvest, plus the harvest basket and the robot crew. Call this first to orient yourself.',
+      'Get the full live state of the garden: every plot, every plant with its id, type, growth stage, health, water level, and whether it is ready to harvest, plus the harvest basket, robot crew, visible plan preview, and active or latest agent job. Call this first to orient or resynchronize yourself after the person interacts with the app.',
     inputSchema: emptySchema,
     annotations: { readOnlyHint: true },
     async execute() {
@@ -304,7 +316,7 @@ export const gardenTools: GardenTool[] = [
         `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}.${helperNote} Nothing has been planted yet.${aftercare === 'one_accelerated_day' ? ' After approval, the same background job will also keep the garden healthy through one accelerated day.' : ''}`,
         {
           plan: preview,
-          nextStep: 'Ask the person to review the glowing plan, then call run_garden_plan with this planId after approval.',
+          nextStep: 'Ask the person to review the glowing plan. They may approve it in the app or in chat. After they respond, call run_garden_plan with this planId; the call safely returns the existing job if the app already started it.',
         },
       );
     },
@@ -312,7 +324,7 @@ export const gardenTools: GardenTool[] = [
   {
     name: 'run_garden_plan',
     description:
-      'Execute the currently visible planting preview after the person approves it. Returns immediately with a job id while the browser plants each assignment and performs any aftercare included in the preview. Background aftercare continues even after your turn ends. Poll get_agent_job for progress.',
+      'Execute a planting preview after the person approves it, or reconcile with the existing job if they already approved it in the app. This is idempotent for a planId and never starts the same plan twice. Background aftercare continues even after your turn ends. Poll get_agent_job for progress.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -327,7 +339,18 @@ export const gardenTools: GardenTool[] = [
     },
     async execute(input) {
       const planId = String(input.planId ?? '');
-      const job = startGardenPlan(planId);
+      const existing = planExecutionSnapshot(planId);
+      if (existing) {
+        const status = existing.job
+          ? `${existing.job.completedActions}/${existing.job.totalActions} actions, ${existing.job.status}`
+          : 'its job record is no longer available';
+        return result(
+          `“${existing.planName}” was already approved ${existing.approvedVia === 'app' ? 'in the web app' : 'through WebMCP'} and started as ${existing.jobId}: ${status}. No duplicate job was started.`,
+          existing,
+        );
+      }
+
+      const job = startGardenPlan(planId, 'webmcp');
       if (!job) {
         return result('That preview is missing, stale, or no longer targets empty plots. Create a fresh preview first.');
       }

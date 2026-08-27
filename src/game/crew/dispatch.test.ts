@@ -52,6 +52,7 @@ function resetWorld() {
   useGardenStore.getState().resetGarden();
   useAgentStore.setState({
     planPreview: null,
+    planExecutions: {},
     jobs: {},
     jobOrder: [],
     activeJobId: null,
