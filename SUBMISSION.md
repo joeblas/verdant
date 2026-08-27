@@ -95,7 +95,7 @@ same hands, not a cheat code.
 - [x] Text description (above)
 - [ ] Demo video (<3 min, public YouTube, audio narration):
   suggested arc — (1) 10s: load the accelerated showcase; (2) 20s: open in
-  ChatGPT, badge turns green, "agent-ready · 12 tools"; (3) 45s: ask for a
+  ChatGPT, badge turns green, "agent-ready · 13 tools"; (3) 45s: ask for a
   pollinator layout and review its glowing preview; (4) 60s: approve it and
   watch the robot's intent, aisle route, and live job progress; (5) 20s: show
   the garden log and completed job report.

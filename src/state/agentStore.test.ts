@@ -26,7 +26,6 @@ describe('agent job progress', () => {
       jobs: {},
       jobOrder: [],
       activeJobId: null,
-      botIntent: null,
     });
   });
 
@@ -62,5 +61,18 @@ describe('agent job progress', () => {
 
     expect(preview.aftercare).toBe('one_accelerated_day');
     expect(useAgentStore.getState().planPreview?.aftercare).toBe('one_accelerated_day');
+    expect(preview.helpers).toBeUndefined();
+  });
+
+  it('stores an explicit helper count on the preview', () => {
+    const preview = createGardenPlanPreview(
+      'Crew rows',
+      'Two helpers peel off the lead.',
+      [{ plotIndex: 1, plantType: 'lettuce' }],
+      'none',
+      2,
+    );
+    expect(preview.helpers).toBe(2);
+    expect(useAgentStore.getState().planPreview?.helpers).toBe(2);
   });
 });

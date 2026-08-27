@@ -124,7 +124,7 @@ export const useGardenStore = create<GardenState>()((set, get) => {
     };
     set((state) => ({
       lastEvents: [
-        ...state.lastEvents.slice(-19),
+        ...state.lastEvents.slice(-39),
         event,
       ],
     }));

@@ -33,9 +33,9 @@ missing from your tool list, ask the human to enable the
 
 1. Confirm `pnpm dev` is serving http://localhost:5173
 2. Navigate there with Chrome DevTools MCP
-3. `list_webmcp_tools` — expect all 12 garden tools
+3. `list_webmcp_tools` — expect all 13 garden tools
 4. Call real tools with `execute_webmcp_tool` (start with `get_garden_state`)
-5. Confirm the page badge reads **Agent-ready · 12 tools**
+5. Confirm the page badge reads **Agent-ready · 13 tools**
 6. Confirm the garden log tags your calls as `agent`
 7. Screenshot or snapshot the robot / scene if the change is visual
 
@@ -48,17 +48,18 @@ Registered on `document.modelContext` by `src/webmcp/register.ts`.
 
 | Tool | Notes |
 | --- | --- |
-| `get_garden_state` | Full live snapshot. Call first. *(read-only)* |
+| `get_garden_state` | Full live snapshot, including the crew. Call first. *(read-only)* |
 | `list_plant_types` | Seed catalog. *(read-only)* |
 | `get_care_recommendations` | Thirsty, harvest-ready, withered, empty. *(read-only)* |
-| `plant_seed` | `plantType`, optional `plotIndex` 0–15 |
-| `water_plant` | One plant by `plantId` |
-| `water_all_thirsty` | Every plant below 35% water |
-| `harvest_plant` | One ready plant by `plantId` |
-| `harvest_all_ready` | Every ready plant |
-| `remove_plant` | Withered plants only |
-| `preview_garden_plan` | Ghost layout; does not plant |
-| `run_garden_plan` | Execute an approved preview as a background job |
+| `set_crew` | `{ helpers: 0\|1\|2\|3 }`. Converges. Repeat is a no-op. `0` recalls. |
+| `plant_seed` | `plantType`, optional `plotIndex` 0–15. Stays on the lead. |
+| `water_plant` | One plant by `plantId`. Stays on the lead. |
+| `water_all_thirsty` | Every plant below 35% water. Uses the crew pool. |
+| `harvest_plant` | One ready plant by `plantId`. Stays on the lead. |
+| `harvest_all_ready` | Every ready plant. Uses the crew pool. |
+| `remove_plant` | Withered plants only. Stays on the lead. |
+| `preview_garden_plan` | Ghost layout; optional `helpers` inherits or spawns up. |
+| `run_garden_plan` | Execute an approved preview as a background crew job |
 | `get_agent_job` | Poll job progress. *(read-only)* |
 
 ## CLI fallback

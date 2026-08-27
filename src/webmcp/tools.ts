@@ -6,6 +6,8 @@ import {
   performAgentAction,
   startGardenPlan,
 } from '../game/agentJobs';
+import { parseHelperCount } from '../game/crew/ids';
+import { crewSnapshot, requestLeadInspection, setCrew } from '../game/crew/roster';
 import type { Plant } from '../game/types';
 import type { GardenPlanAssignment } from '../state/agentStore';
 import {
@@ -70,6 +72,7 @@ function gardenSnapshot() {
     demoMode: after.demoMode,
     timeScale: after.demoMode ? DEMO_TIME_SCALE : 1,
     careTimeScale: after.demoMode ? DEMO_CARE_TIME_SCALE : 1,
+    crew: crewSnapshot(),
   };
 }
 
@@ -114,11 +117,12 @@ export const gardenTools: GardenTool[] = [
   {
     name: 'get_garden_state',
     description:
-      'Get the full live state of the garden: every plot, every plant with its id, type, growth stage, health, water level, and whether it is ready to harvest, plus the harvest basket. Call this first to orient yourself.',
+      'Get the full live state of the garden: every plot, every plant with its id, type, growth stage, health, water level, and whether it is ready to harvest, plus the harvest basket and the robot crew. Call this first to orient yourself.',
     inputSchema: emptySchema,
     annotations: { readOnlyHint: true },
     async execute() {
       useGardenStore.getState().signalAgentInspection();
+      requestLeadInspection();
       const snapshot = gardenSnapshot();
       return result(
         `Garden state: ${snapshot.plantCount} plant(s) across ${PLOT_COUNT} plots, ${snapshot.emptyPlots.length} empty.`,
@@ -134,6 +138,7 @@ export const gardenTools: GardenTool[] = [
     annotations: { readOnlyHint: true },
     async execute() {
       useGardenStore.getState().signalAgentInspection();
+      requestLeadInspection();
       const catalog = PLANT_TYPE_LIST.map((t) => ({
         id: t.id,
         name: t.name,
@@ -154,6 +159,7 @@ export const gardenTools: GardenTool[] = [
     annotations: { readOnlyHint: true },
     async execute() {
       useGardenStore.getState().signalAgentInspection();
+      requestLeadInspection();
       const snapshot = gardenSnapshot();
       const plants = snapshot.plots.flatMap((p) => (p.plant ? [p.plant] : []));
       const thirsty = plants.filter((p) => p.stage !== 'withered' && p.water < 35);
@@ -233,6 +239,13 @@ export const gardenTools: GardenTool[] = [
           description:
             'Set to "one_accelerated_day" when the person asks you to keep the approved planting healthy afterward. The browser will own that 60-second demo-day care session, so it continues after your turn ends.',
         },
+        helpers: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 3,
+          description:
+            'How many helpers should work this plan. Omit to keep the standing crew. A number only adds helpers, it never recalls them.',
+        },
       },
       required: ['name', 'rationale', 'assignments'],
       additionalProperties: false,
@@ -276,9 +289,19 @@ export const gardenTools: GardenTool[] = [
 
       const aftercare =
         input.aftercare === 'one_accelerated_day' ? 'one_accelerated_day' : 'none';
-      const preview = createGardenPlanPreview(name, rationale, assignments, aftercare);
+      let helpers: 0 | 1 | 2 | 3 | undefined;
+      if (input.helpers !== undefined) {
+        const parsed = parseHelperCount(input.helpers);
+        if (parsed === null) return result('helpers must be 0, 1, 2, or 3.');
+        helpers = parsed;
+      }
+      const preview = createGardenPlanPreview(name, rationale, assignments, aftercare, helpers);
+      const helperNote =
+        preview.helpers === undefined
+          ? ''
+          : ` Uses ${preview.helpers} helper${preview.helpers === 1 ? '' : 's'} with the lead.`;
       return result(
-        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}. Nothing has been planted yet.${aftercare === 'one_accelerated_day' ? ' After approval, the same background job will also keep the garden healthy through one accelerated day.' : ''}`,
+        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}.${helperNote} Nothing has been planted yet.${aftercare === 'one_accelerated_day' ? ' After approval, the same background job will also keep the garden healthy through one accelerated day.' : ''}`,
         {
           plan: preview,
           nextStep: 'Ask the person to review the glowing plan, then call run_garden_plan with this planId after approval.',
@@ -308,8 +331,13 @@ export const gardenTools: GardenTool[] = [
       if (!job) {
         return result('That preview is missing, stale, or no longer targets empty plots. Create a fresh preview first.');
       }
+      const crew = crewSnapshot();
       return result(
-        `Started “${job.label}” as ${job.id}. The robot is working in the background.`,
+        `Started “${job.label}” as ${job.id}. ${
+          crew.size > 1
+            ? `A crew of ${crew.size} is working in the background.`
+            : 'The robot is working in the background.'
+        }`,
         agentJobSnapshot(job.id),
       );
     },
@@ -328,6 +356,41 @@ export const gardenTools: GardenTool[] = [
         `${job.label}: ${job.completedActions}/${job.totalActions} actions, ${job.status}.`,
         job,
       );
+    },
+  },
+  {
+    name: 'set_crew',
+    description:
+      'Set how many helper robots should be out with the lead. Helpers pop out of the lead and merge back into it. The count is declarative: set_crew({ helpers: 2 }) twice still yields two helpers. helpers: 0 recalls every helper. A helper that is mid-task finishes it first; converged: false means the crew is still settling.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        helpers: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 3,
+          description: 'Helpers to have standing besides the lead. 0 recalls everyone.',
+        },
+      },
+      required: ['helpers'],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const helpers = parseHelperCount(input.helpers);
+      if (helpers === null) {
+        return result('helpers must be an integer 0, 1, 2, or 3.');
+      }
+      const crew = setCrew(helpers);
+      const settling = crew.robots
+        .filter((robot) => robot.status === 'emerging' || robot.status === 'merging' || robot.status === 'travelling' || robot.status === 'working')
+        .map((robot) => robot.id);
+      const helperNoun = crew.desiredHelpers === 1 ? 'helper' : 'helpers';
+      const message = crew.converged
+        ? `${crew.desiredHelpers} ${helperNoun} with the lead.`
+        : settling.length > 0
+          ? `Converging to ${crew.desiredHelpers} ${helperNoun}. ${settling.join(', ')} still settling.`
+          : `Converging to ${crew.desiredHelpers} ${helperNoun}.`;
+      return result(message, crew);
     },
   },
   {

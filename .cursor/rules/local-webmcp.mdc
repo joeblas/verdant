@@ -19,12 +19,12 @@ When changing UI, garden logic, or WebMCP tools, verify against a live local gar
 - Do **not** verify in ChatGPT or Codex browsers.
 - Use the project MCP server `chrome-devtools-webmcp` (`.cursor/mcp.json`).
 - It launches **Chrome stable** with `--enable-features=WebMCP` and `--category-experimental-webmcp`.
-- Success: badge reads **Agent-ready · 12 tools** and `document.modelContext` exists.
+- Success: badge reads **Agent-ready · 13 tools** and `document.modelContext` exists.
 
 ## Interact
 
 1. Navigate to http://localhost:5173
-2. `list_webmcp_tools` — expect the 12 garden tools
+2. `list_webmcp_tools` — expect the 13 garden tools
 3. `execute_webmcp_tool` for real calls (`get_garden_state`, `plant_seed`, …)
 4. Screenshot / snapshot to confirm the robot, garden log tagged `agent`, and scene updates
 
