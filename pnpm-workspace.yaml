@@ -1,0 +1,7 @@
+# Single-package app. This file is pnpm config (build approvals), not a monorepo.
+allowBuilds:
+  esbuild: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - miniflare@5.20260825.0-alpha
+  - wrangler@4.126.0

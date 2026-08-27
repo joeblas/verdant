@@ -17,11 +17,11 @@ Built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/).
 ## Quickstart
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
-npm test         # simulation, aisle-routing, and agent-progress checks
-npm run build    # type-check + production build to dist/
-npm run deploy   # deploys dist/ to Cloudflare Workers Static Assets
+pnpm install
+pnpm dev         # http://localhost:5173
+pnpm test        # simulation, aisle-routing, and agent-progress checks
+pnpm build       # type-check + production build to dist/
+pnpm deploy      # deploys dist/ to Cloudflare Workers Static Assets
 ```
 
 Local coding agents should follow [AGENTS.md](./AGENTS.md): run Vite, then

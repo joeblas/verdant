@@ -5,12 +5,13 @@
   "type": "module",
   "description": "A relaxing 3D garden you tend together with an AI agent, via WebMCP.",
   "license": "MIT",
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "pnpm run build && wrangler deploy"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

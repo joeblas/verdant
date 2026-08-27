@@ -6,10 +6,12 @@ Cursor's built-in browser.
 
 ## Run locally
 
+Use **pnpm** only. Do not run `npm install` or commit a `package-lock.json`.
+
 ```bash
-npm install
-npm run dev      # http://localhost:5173
-npm test         # simulation, aisle-routing, and agent-progress checks
+pnpm install
+pnpm dev         # http://localhost:5173
+pnpm test        # simulation, aisle-routing, and agent-progress checks
 ```
 
 `localhost` is a secure context, so WebMCP works without HTTPS.
@@ -29,7 +31,7 @@ missing from your tool list, ask the human to enable the
 
 ## Verify a change
 
-1. Confirm `npm run dev` is serving http://localhost:5173
+1. Confirm `pnpm dev` is serving http://localhost:5173
 2. Navigate there with Chrome DevTools MCP
 3. `list_webmcp_tools` — expect all 12 garden tools
 4. Call real tools with `execute_webmcp_tool` (start with `get_garden_state`)
@@ -64,18 +66,18 @@ Registered on `document.modelContext` by `src/webmcp/register.ts`.
 Use this only when the MCP server is not loaded in the current session:
 
 ```bash
-npx -y --package=chrome-devtools-mcp@latest chrome-devtools start \
+pnpm dlx --package chrome-devtools-mcp@latest chrome-devtools start \
   --no-headless \
   --categoryExperimentalWebmcp \
   --chrome-arg=--enable-features=WebMCP \
   --userDataDir="$HOME/.cache/verdant-webmcp-chrome"
 
-npx -y --package=chrome-devtools-mcp@latest chrome-devtools navigate_page 1 \
+pnpm dlx --package chrome-devtools-mcp@latest chrome-devtools navigate_page 1 \
   --type url --url http://localhost:5173/
 
-npx -y --package=chrome-devtools-mcp@latest chrome-devtools list_webmcp_tools 1
+pnpm dlx --package chrome-devtools-mcp@latest chrome-devtools list_webmcp_tools 1
 
-npx -y --package=chrome-devtools-mcp@latest chrome-devtools execute_webmcp_tool 1 \
+pnpm dlx --package chrome-devtools-mcp@latest chrome-devtools execute_webmcp_tool 1 \
   get_garden_state
 ```
 

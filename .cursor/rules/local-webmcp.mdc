@@ -9,8 +9,9 @@ When changing UI, garden logic, or WebMCP tools, verify against a live local gar
 
 ## Run
 
-- `npm install` then `npm run dev` → http://localhost:5173
-- `npm test` for simulation / aisle / agent-job unit checks
+- `pnpm install` then `pnpm dev` → http://localhost:5173
+- `pnpm test` for simulation / aisle / agent-job unit checks
+- Use pnpm only. Do not add a `package-lock.json`.
 
 ## Browser
 
