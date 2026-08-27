@@ -24,6 +24,10 @@ npm run build    # type-check + production build to dist/
 npm run deploy   # deploys dist/ to Cloudflare Workers Static Assets
 ```
 
+Local coding agents should follow [AGENTS.md](./AGENTS.md): run Vite, then
+drive the garden through Chrome DevTools MCP (`chrome-devtools-webmcp` in
+`.cursor/mcp.json`). Cursor's built-in browser cannot enable WebMCP.
+
 ## Co-tending with an agent
 
 1. Open the live URL in ChatGPT's in-app browser or Chrome 146+ with WebMCP

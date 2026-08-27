@@ -1,0 +1,32 @@
+---
+description: Run verdant locally and verify WebMCP via Chrome DevTools MCP, not the Cursor browser.
+alwaysApply: true
+---
+
+# Local WebMCP loop
+
+When changing UI, garden logic, or WebMCP tools, verify against a live local garden. Read `AGENTS.md` for the full tool list and fallback CLI.
+
+## Run
+
+- `npm install` then `npm run dev` → http://localhost:5173
+- `npm test` for simulation / aisle / agent-job unit checks
+
+## Browser
+
+- Do **not** use Cursor's built-in browser. It has no WebMCP flag.
+- Do **not** verify in ChatGPT or Codex browsers.
+- Use the project MCP server `chrome-devtools-webmcp` (`.cursor/mcp.json`).
+- It launches **Chrome stable** with `--enable-features=WebMCP` and `--category-experimental-webmcp`.
+- Success: badge reads **Agent-ready · 12 tools** and `document.modelContext` exists.
+
+## Interact
+
+1. Navigate to http://localhost:5173
+2. `list_webmcp_tools` — expect the 12 garden tools
+3. `execute_webmcp_tool` for real calls (`get_garden_state`, `plant_seed`, …)
+4. Screenshot / snapshot to confirm the robot, garden log tagged `agent`, and scene updates
+
+Do not verify WebMCP by poking the Zustand store with `evaluate_script`. That skips registration.
+
+If `list_webmcp_tools` is missing, the MCP server is not loaded — ask the user to enable `chrome-devtools-webmcp`, or use the CLI fallback in `AGENTS.md`.
