@@ -165,6 +165,13 @@ function PlanPreviewPanel() {
           Includes visible robot care through one accelerated day after planting.
         </p>
       )}
+      {plan.helpers !== undefined && (
+        <p className="tools-note">
+          {plan.helpers === 1
+            ? 'Uses 1 helper with the lead.'
+            : `Uses ${plan.helpers} helpers with the lead.`}
+        </p>
+      )}
       <div className="plan-assignment-list">
         {plan.assignments.map((assignment) => {
           const type = PLANT_TYPES[assignment.plantType];
@@ -180,7 +187,7 @@ function PlanPreviewPanel() {
         <button className="btn" onClick={() => clearPlanPreview(plan.id)}>
           Dismiss
         </button>
-        <button className="btn primary" onClick={() => startGardenPlan(plan.id)}>
+        <button className="btn primary" onClick={() => startGardenPlan(plan.id, 'app')}>
           Approve & plant
         </button>
       </div>

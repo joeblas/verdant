@@ -1,9 +1,9 @@
 import { create } from 'zustand';
+import type { HelperCount } from '../game/crew/ids';
 import type { PlantTypeId } from '../game/plants';
 import type { GardenEvent } from '../game/types';
 
 export type AgentActionKind = Exclude<GardenEvent['kind'], 'inspect'>;
-export type AgentIntentPhase = 'queued' | 'walking' | 'acting';
 export type AgentJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export interface GardenPlanAssignment {
@@ -17,7 +17,18 @@ export interface GardenPlanPreview {
   rationale: string;
   assignments: GardenPlanAssignment[];
   aftercare: 'none' | 'one_accelerated_day';
+  helpers?: HelperCount;
   createdAt: number;
+}
+
+export type PlanApprovalSource = 'app' | 'webmcp';
+
+export interface PlanExecution {
+  planId: string;
+  planName: string;
+  jobId: string;
+  approvedVia: PlanApprovalSource;
+  approvedAt: number;
 }
 
 export interface AgentJob {
@@ -35,22 +46,16 @@ export interface AgentJob {
   finishedAt: number | null;
 }
 
-export interface AgentIntent {
-  label: string;
-  phase: AgentIntentPhase;
-  kind: GardenEvent['kind'];
-  plotIndex: number;
-}
-
 interface AgentState {
   planPreview: GardenPlanPreview | null;
+  planExecutions: Record<string, PlanExecution>;
   jobs: Record<string, AgentJob>;
   jobOrder: string[];
   activeJobId: string | null;
-  botIntent: AgentIntent | null;
 
   setPlanPreview: (preview: GardenPlanPreview) => void;
   clearPlanPreview: (planId?: string) => void;
+  recordPlanExecution: (execution: PlanExecution) => void;
   createJob: (job: AgentJob) => void;
   startJob: (jobId: string) => void;
   setJobAction: (jobId: string, label: string, plotIndex: number | null) => void;
@@ -58,24 +63,29 @@ interface AgentState {
   completeJob: (jobId: string) => void;
   failJob: (jobId: string, error: string) => void;
   dismissJob: (jobId: string) => void;
-  setBotIntent: (intent: AgentIntent | null) => void;
-  setBotIntentPhase: (phase: AgentIntentPhase) => void;
 }
 
 const MAX_JOBS = 12;
 
 export const useAgentStore = create<AgentState>()((set) => ({
   planPreview: null,
+  planExecutions: {},
   jobs: {},
   jobOrder: [],
   activeJobId: null,
-  botIntent: null,
 
   setPlanPreview: (planPreview) => set({ planPreview }),
   clearPlanPreview: (planId) =>
     set((state) =>
       !planId || state.planPreview?.id === planId ? { planPreview: null } : state,
     ),
+  recordPlanExecution: (execution) =>
+    set((state) => ({
+      planExecutions: {
+        ...state.planExecutions,
+        [execution.planId]: execution,
+      },
+    })),
   createJob: (job) =>
     set((state) => {
       const jobOrder = [job.id, ...state.jobOrder.filter((id) => id !== job.id)].slice(0, MAX_JOBS);
@@ -157,11 +167,6 @@ export const useAgentStore = create<AgentState>()((set) => ({
         jobOrder: state.jobOrder.filter((id) => id !== jobId),
       };
     }),
-  setBotIntent: (botIntent) => set({ botIntent }),
-  setBotIntentPhase: (phase) =>
-    set((state) => ({
-      botIntent: state.botIntent ? { ...state.botIntent, phase } : null,
-    })),
 }));
 
 export function latestAgentJob(): AgentJob | null {

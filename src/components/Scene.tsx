@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { PLOT_COUNT } from '../state/gardenStore';
-import { GardenBot } from './GardenBot';
+import { Crew } from './Crew';
 import { Plot } from './Plot';
 
 function Daylight() {
@@ -81,7 +81,7 @@ export function Scene() {
         <meshStandardMaterial color="#79b473" />
       </mesh>
 
-      <GardenBot />
+      <Crew />
       {plots.map((i) => (
         <Plot key={i} index={i} />
       ))}

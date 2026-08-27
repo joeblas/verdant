@@ -3,11 +3,14 @@ import {
   agentJobSnapshot,
   createGardenPlanPreview,
   enqueueAgentJob,
+  planExecutionSnapshot,
   performAgentAction,
   startGardenPlan,
 } from '../game/agentJobs';
+import { parseHelperCount } from '../game/crew/ids';
+import { crewSnapshot, requestLeadInspection, setCrew } from '../game/crew/roster';
 import type { Plant } from '../game/types';
-import type { GardenPlanAssignment } from '../state/agentStore';
+import { useAgentStore, type GardenPlanAssignment } from '../state/agentStore';
 import {
   DEMO_CARE_TIME_SCALE,
   DEMO_TIME_SCALE,
@@ -62,6 +65,10 @@ function gardenSnapshot() {
     const plant = occupied.get(i);
     return plant ? { plotIndex: i, plant: summarizePlant(plant) } : { plotIndex: i, plant: null };
   });
+  const agent = useAgentStore.getState();
+  const latestExecution = Object.values(agent.planExecutions).sort(
+    (a, b) => b.approvedAt - a.approvedAt,
+  )[0];
   return {
     plots,
     emptyPlots: plots.filter((p) => p.plant === null).map((p) => p.plotIndex),
@@ -70,6 +77,14 @@ function gardenSnapshot() {
     demoMode: after.demoMode,
     timeScale: after.demoMode ? DEMO_TIME_SCALE : 1,
     careTimeScale: after.demoMode ? DEMO_CARE_TIME_SCALE : 1,
+    crew: crewSnapshot(),
+    agent: {
+      planPreview: agent.planPreview,
+      activeOrLatestJob: agentJobSnapshot(),
+      latestPlanExecution: latestExecution
+        ? planExecutionSnapshot(latestExecution.planId)
+        : null,
+    },
   };
 }
 
@@ -114,11 +129,12 @@ export const gardenTools: GardenTool[] = [
   {
     name: 'get_garden_state',
     description:
-      'Get the full live state of the garden: every plot, every plant with its id, type, growth stage, health, water level, and whether it is ready to harvest, plus the harvest basket. Call this first to orient yourself.',
+      'Get the full live state of the garden: every plot, every plant with its id, type, growth stage, health, water level, and whether it is ready to harvest, plus the harvest basket, robot crew, visible plan preview, and active or latest agent job. Call this first to orient or resynchronize yourself after the person interacts with the app.',
     inputSchema: emptySchema,
     annotations: { readOnlyHint: true },
     async execute() {
       useGardenStore.getState().signalAgentInspection();
+      requestLeadInspection();
       const snapshot = gardenSnapshot();
       return result(
         `Garden state: ${snapshot.plantCount} plant(s) across ${PLOT_COUNT} plots, ${snapshot.emptyPlots.length} empty.`,
@@ -134,6 +150,7 @@ export const gardenTools: GardenTool[] = [
     annotations: { readOnlyHint: true },
     async execute() {
       useGardenStore.getState().signalAgentInspection();
+      requestLeadInspection();
       const catalog = PLANT_TYPE_LIST.map((t) => ({
         id: t.id,
         name: t.name,
@@ -154,6 +171,7 @@ export const gardenTools: GardenTool[] = [
     annotations: { readOnlyHint: true },
     async execute() {
       useGardenStore.getState().signalAgentInspection();
+      requestLeadInspection();
       const snapshot = gardenSnapshot();
       const plants = snapshot.plots.flatMap((p) => (p.plant ? [p.plant] : []));
       const thirsty = plants.filter((p) => p.stage !== 'withered' && p.water < 35);
@@ -233,6 +251,13 @@ export const gardenTools: GardenTool[] = [
           description:
             'Set to "one_accelerated_day" when the person asks you to keep the approved planting healthy afterward. The browser will own that 60-second demo-day care session, so it continues after your turn ends.',
         },
+        helpers: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 3,
+          description:
+            'How many helpers should work this plan. Omit to keep the standing crew. A number only adds helpers, it never recalls them.',
+        },
       },
       required: ['name', 'rationale', 'assignments'],
       additionalProperties: false,
@@ -276,12 +301,22 @@ export const gardenTools: GardenTool[] = [
 
       const aftercare =
         input.aftercare === 'one_accelerated_day' ? 'one_accelerated_day' : 'none';
-      const preview = createGardenPlanPreview(name, rationale, assignments, aftercare);
+      let helpers: 0 | 1 | 2 | 3 | undefined;
+      if (input.helpers !== undefined) {
+        const parsed = parseHelperCount(input.helpers);
+        if (parsed === null) return result('helpers must be 0, 1, 2, or 3.');
+        helpers = parsed;
+      }
+      const preview = createGardenPlanPreview(name, rationale, assignments, aftercare, helpers);
+      const helperNote =
+        preview.helpers === undefined
+          ? ''
+          : ` Uses ${preview.helpers} helper${preview.helpers === 1 ? '' : 's'} with the lead.`;
       return result(
-        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}. Nothing has been planted yet.${aftercare === 'one_accelerated_day' ? ' After approval, the same background job will also keep the garden healthy through one accelerated day.' : ''}`,
+        `Previewing “${preview.name}” across ${assignments.length} plot${assignments.length === 1 ? '' : 's'}.${helperNote} Nothing has been planted yet.${aftercare === 'one_accelerated_day' ? ' After approval, the same background job will also keep the garden healthy through one accelerated day.' : ''}`,
         {
           plan: preview,
-          nextStep: 'Ask the person to review the glowing plan, then call run_garden_plan with this planId after approval.',
+          nextStep: 'Ask the person to review the glowing plan. They may approve it in the app or in chat. After they respond, call run_garden_plan with this planId; the call safely returns the existing job if the app already started it.',
         },
       );
     },
@@ -289,7 +324,7 @@ export const gardenTools: GardenTool[] = [
   {
     name: 'run_garden_plan',
     description:
-      'Execute the currently visible planting preview after the person approves it. Returns immediately with a job id while the browser plants each assignment and performs any aftercare included in the preview. Background aftercare continues even after your turn ends. Poll get_agent_job for progress.',
+      'Execute a planting preview after the person approves it, or reconcile with the existing job if they already approved it in the app. This is idempotent for a planId and never starts the same plan twice. Background aftercare continues even after your turn ends. Poll get_agent_job for progress.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -304,12 +339,28 @@ export const gardenTools: GardenTool[] = [
     },
     async execute(input) {
       const planId = String(input.planId ?? '');
-      const job = startGardenPlan(planId);
+      const existing = planExecutionSnapshot(planId);
+      if (existing) {
+        const status = existing.job
+          ? `${existing.job.completedActions}/${existing.job.totalActions} actions, ${existing.job.status}`
+          : 'its job record is no longer available';
+        return result(
+          `“${existing.planName}” was already approved ${existing.approvedVia === 'app' ? 'in the web app' : 'through WebMCP'} and started as ${existing.jobId}: ${status}. No duplicate job was started.`,
+          existing,
+        );
+      }
+
+      const job = startGardenPlan(planId, 'webmcp');
       if (!job) {
         return result('That preview is missing, stale, or no longer targets empty plots. Create a fresh preview first.');
       }
+      const crew = crewSnapshot();
       return result(
-        `Started “${job.label}” as ${job.id}. The robot is working in the background.`,
+        `Started “${job.label}” as ${job.id}. ${
+          crew.size > 1
+            ? `A crew of ${crew.size} is working in the background.`
+            : 'The robot is working in the background.'
+        }`,
         agentJobSnapshot(job.id),
       );
     },
@@ -328,6 +379,41 @@ export const gardenTools: GardenTool[] = [
         `${job.label}: ${job.completedActions}/${job.totalActions} actions, ${job.status}.`,
         job,
       );
+    },
+  },
+  {
+    name: 'set_crew',
+    description:
+      'Set how many helper robots should be out with the lead. Helpers pop out of the lead and merge back into it. The count is declarative: set_crew({ helpers: 2 }) twice still yields two helpers. helpers: 0 recalls every helper. A helper that is mid-task finishes it first; converged: false means the crew is still settling.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        helpers: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 3,
+          description: 'Helpers to have standing besides the lead. 0 recalls everyone.',
+        },
+      },
+      required: ['helpers'],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const helpers = parseHelperCount(input.helpers);
+      if (helpers === null) {
+        return result('helpers must be an integer 0, 1, 2, or 3.');
+      }
+      const crew = setCrew(helpers);
+      const settling = crew.robots
+        .filter((robot) => robot.status === 'emerging' || robot.status === 'merging' || robot.status === 'travelling' || robot.status === 'working')
+        .map((robot) => robot.id);
+      const helperNoun = crew.desiredHelpers === 1 ? 'helper' : 'helpers';
+      const message = crew.converged
+        ? `${crew.desiredHelpers} ${helperNoun} with the lead.`
+        : settling.length > 0
+          ? `Converging to ${crew.desiredHelpers} ${helperNoun}. ${settling.join(', ')} still settling.`
+          : `Converging to ${crew.desiredHelpers} ${helperNoun}.`;
+      return result(message, crew);
     },
   },
   {

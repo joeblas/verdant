@@ -32,7 +32,7 @@ drive the garden through Chrome DevTools MCP (`chrome-devtools-webmcp` in
 
 1. Open the live URL in ChatGPT's in-app browser or Chrome 146+ with WebMCP
    enabled.
-2. The badge in the top-left turns green: **"Agent-ready · 12 tools"**.
+2. The badge in the top-left turns green: **"Agent-ready · 13 tools"**.
 3. Ask the agent things like:
    - "What's the state of my garden?"
    - "What needs attention right now?"
@@ -58,16 +58,17 @@ applicable:
 
 | Tool | Description |
 | --- | --- |
-| `get_garden_state` | Full live snapshot: every plot, plant id, stage, health, water, readiness, basket. *(read-only)* |
+| `get_garden_state` | Full live snapshot: plots, plants, basket, and the robot crew. *(read-only)* |
 | `list_plant_types` | Seed catalog: growth times, water needs, yields. *(read-only)* |
 | `get_care_recommendations` | Prioritized "what needs attention now" — thirsty, harvest-ready, withered, empty plots. *(read-only)* |
+| `set_crew` | Ask for 0–3 helpers. They peel off the lead and merge back in. Repeat is a no-op. |
 | `plant_seed` | Plant a seed (`plantType`, optional `plotIndex`; auto-picks an empty plot). |
 | `water_plant` | Water one plant by id. |
-| `water_all_thirsty` | Water every plant below 35% water in one call. |
+| `water_all_thirsty` | Water every plant below 35% water in one call. Uses the standing crew. |
 | `harvest_plant` | Harvest one ready plant by id. |
-| `harvest_all_ready` | Harvest everything ready. |
+| `harvest_all_ready` | Harvest everything ready. Uses the standing crew. |
 | `remove_plant` | Clear a withered plant (living plants are never destroyed). |
-| `preview_garden_plan` | Render a proposed multi-plot layout without changing garden state. |
+| `preview_garden_plan` | Render a proposed multi-plot layout. Optional `helpers` inherits or spawns up. |
 | `run_garden_plan` | Execute the visible plan after human approval as a background job. |
 | `get_agent_job` | Read live progress and results for an asynchronous robot job. *(read-only)* |
 
