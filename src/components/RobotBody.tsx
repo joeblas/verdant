@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -19,6 +19,8 @@ import { selectRobot, useCrewStore } from '../state/crewStore';
 
 const HOME = new THREE.Vector3(...botHomePosition());
 const ACTION_SECONDS = BOT_ACTION_MS / 1000;
+/** How long the bubble lingers in its "done" state so observers can read it. */
+const DONE_LINGER_MS = 1600;
 
 const ACTION_COLORS: Record<GardenEvent['kind'], string> = {
   inspect: '#8ce6ff',
@@ -179,6 +181,10 @@ export function RobotBody({
   const leftLeg = useRef<THREE.Group>(null);
   const rightLeg = useRef<THREE.Group>(null);
   const statusLight = useRef<THREE.MeshStandardMaterial>(null);
+  const aura = useRef<THREE.Group>(null);
+  const auraRing = useRef<THREE.Mesh>(null);
+  const auraRingMat = useRef<THREE.MeshBasicMaterial>(null);
+  const auraBeamMat = useRef<THREE.MeshBasicMaterial>(null);
   const current = useRef(HOME.clone());
   const walk = useRef<WalkJob | null>(null);
   const transition = useRef<{ token: number; startedAt: number; from: THREE.Vector3 } | null>(null);
@@ -190,9 +196,35 @@ export function RobotBody({
   const docked = duty.phase === 'docked';
   const visualScale = docked ? scale * 0.55 : scale;
 
+  // Keep a "done" bubble on screen briefly after a task finishes, so observers
+  // can read what the robot just did instead of the bubble vanishing instantly.
+  const [linger, setLinger] = useState<{ label: string; kind: GardenEvent['kind'] } | null>(null);
+  const lastWork = useRef<{ label: string; kind: GardenEvent['kind'] } | null>(null);
+  const lingerTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (duty.phase === 'working' && duty.task) {
+      lastWork.current = { label: duty.task.label, kind: duty.task.action.kind };
+      if (lingerTimer.current !== null) window.clearTimeout(lingerTimer.current);
+      setLinger(null);
+    } else if (lastWork.current) {
+      const finished = lastWork.current;
+      lastWork.current = null;
+      setLinger(finished);
+      if (lingerTimer.current !== null) window.clearTimeout(lingerTimer.current);
+      lingerTimer.current = window.setTimeout(() => setLinger(null), DONE_LINGER_MS);
+    }
+  }, [duty]);
+  useEffect(() => () => {
+    if (lingerTimer.current !== null) window.clearTimeout(lingerTimer.current);
+  }, []);
+
+  const shownBubble = bubble ?? (linger ? { phase: 'done', label: linger.label } : null);
+  const bubbleKind = bubble ? kind ?? 'inspect' : linger?.kind ?? 'inspect';
+
   useFrame(({ clock }) => {
     const mesh = root.current;
     if (!mesh) return;
+    if (aura.current) aura.current.visible = false;
 
     const now = clock.elapsedTime;
     const key = `${duty.phase}:${duty.phase === 'travelling' || duty.phase === 'working' ? duty.task.eventId : ''}:${
@@ -342,6 +374,25 @@ export function RobotBody({
       }
     } else if (duty.phase === 'working') {
       const actionT = Math.min(elapsed / ACTION_SECONDS, 1);
+      const auraColor = ACTION_COLORS[job.kind];
+      const pulse = 0.5 + Math.sin(now * 7) * 0.5;
+      if (aura.current) {
+        aura.current.visible = true;
+        aura.current.position.set(job.target.x, 0.02, job.target.z);
+        aura.current.rotation.y = now * 1.4;
+      }
+      if (auraRing.current) {
+        const ringScale = 1 + pulse * 0.16;
+        auraRing.current.scale.set(ringScale, ringScale, 1);
+      }
+      if (auraRingMat.current) {
+        auraRingMat.current.color.set(auraColor);
+        auraRingMat.current.opacity = 0.5 + pulse * 0.4;
+      }
+      if (auraBeamMat.current) {
+        auraBeamMat.current.color.set(auraColor);
+        auraBeamMat.current.opacity = 0.1 + pulse * 0.12;
+      }
       mesh.position.set(job.target.x, job.target.y, job.target.z);
       mesh.rotation.y = job.actionRotation;
       if (leftLeg.current) leftLeg.current.rotation.x = 0;
@@ -374,7 +425,32 @@ export function RobotBody({
   });
 
   return (
-    <group ref={root} position={HOME.toArray()} scale={visualScale} visible={!docked}>
+    <>
+      <group ref={aura} visible={false}>
+        <mesh ref={auraRing} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.62, 0.84, 40]} />
+          <meshBasicMaterial
+            ref={auraRingMat}
+            transparent
+            opacity={0}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        <mesh position={[0, 1.55, 0]}>
+          <cylinderGeometry args={[0.48, 0.72, 3.1, 24, 1, true]} />
+          <meshBasicMaterial
+            ref={auraBeamMat}
+            transparent
+            opacity={0}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      </group>
+      <group ref={root} position={HOME.toArray()} scale={visualScale} visible={!docked}>
       <group ref={body}>
         <mesh castShadow position={[0, 0.76, 0]}>
           <dodecahedronGeometry args={[0.43, 0]} />
@@ -442,15 +518,28 @@ export function RobotBody({
           </mesh>
         </group>
         <Tool kind={activeKind} />
-        {bubble && !docked && (
-          <Html position={[0, 2.08, 0]} center distanceFactor={9} zIndexRange={[20, 0]}>
-            <div className="bot-intent-bubble">
-              <span className={`bot-intent-phase ${bubble.phase}`}>{bubble.phase}</span>
-              <span>{bubble.label}</span>
+        {shownBubble && !docked && (
+          <Html position={[0, 2.2, 0]} center distanceFactor={11} zIndexRange={[20, 0]}>
+            <div
+              className={`bot-intent-bubble ${shownBubble.phase}`}
+              style={{ '--intent-color': ACTION_COLORS[bubbleKind] } as CSSProperties}
+            >
+              <span className="bot-intent-header">
+                <span className="bot-intent-source">WebMCP</span>
+                <span className={`bot-intent-phase ${shownBubble.phase}`}>
+                  {shownBubble.phase === 'acting'
+                    ? bubbleKind
+                    : shownBubble.phase === 'done'
+                      ? '✓ done'
+                      : shownBubble.phase}
+                </span>
+              </span>
+              <span className="bot-intent-label">{shownBubble.label}</span>
             </div>
           </Html>
         )}
       </group>
-    </group>
+      </group>
+    </>
   );
 }
